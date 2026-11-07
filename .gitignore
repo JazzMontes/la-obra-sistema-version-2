@@ -1,0 +1,33 @@
+# Dependencias y compilados
+/node_modules
+/www
+/dist
+/out-tsc
+/.angular
+/coverage
+*.tsbuildinfo
+
+# Android (se genera con: npx cap add android)
+/android/app/build
+/android/build
+/android/.gradle
+/android/local.properties
+/android/capacitor-cordova-android-plugins
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Respaldos y migraciones con datos reales: NUNCA se suben (el repositorio es público)
+respaldo-la-obra-v2-*.json
+la_obra_v2_datos_*.sql
+la_obra_v2_fotos_*.sql
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+npm-debug.log*
+.env

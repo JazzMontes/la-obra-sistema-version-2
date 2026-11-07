@@ -1,0 +1,52 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Validar estudiante</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Descuento para estudiantes</h1>
+        <p>Consulta la matrícula en el sistema de Control Escolar. Si el alumno está activo, aplica {{ porcentajeDescuento }}% de descuento al consumo.</p>
+      </div>
+    </div>
+
+    <div class="card card-pad stack">
+      <form class="lookup" (ngSubmit)="validarAlumno()">
+        <div class="field grow">
+          <label for="sv-mat">Matrícula</label>
+          <input id="sv-mat" name="matricula" class="input" [(ngModel)]="matricula" (ngModelChange)="resultado && limpiarResultado()" autocapitalize="characters" placeholder="Ej. A01234567" />
+        </div>
+        <button class="btn btn-dark" type="submit" [disabled]="cargando">{{ cargando ? 'Consultando…' : 'Verificar' }}</button>
+      </form>
+
+      <div class="notice danger" *ngIf="error"><app-icon name="alert"></app-icon><div>{{ error }}</div></div>
+
+      <div class="result" *ngIf="resultado" [class.ok]="tieneDescuento">
+        <app-icon [name]="tieneDescuento ? 'check' : 'alert'"></app-icon>
+        <div>
+          <strong *ngIf="tieneDescuento">Alumno activo · aplica descuento</strong>
+          <strong *ngIf="!resultado.exists">La matrícula no existe</strong>
+          <strong *ngIf="resultado.exists && !resultado.active">Alumno inactivo · no aplica descuento</strong>
+          <div class="small muted">Matrícula {{ matriculaConsultada }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad stack calc">
+      <div class="field">
+        <label for="sv-amount">Consumo</label>
+        <div class="input-group">
+          <span class="addon">$</span>
+          <input id="sv-amount" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="monto" />
+        </div>
+      </div>
+      <div class="line"><span>Consumo</span><span class="num">{{ consumo | money }}</span></div>
+      <div class="line"><span>Descuento ({{ tieneDescuento ? porcentajeDescuento : 0 }}%)</span><span class="num text-success">−{{ descuento | money }}</span></div>
+      <div class="line total"><span>Total a cobrar</span><strong class="num">{{ total | money }}</strong></div>
+    </div>
+  </div>
+</ion-content>

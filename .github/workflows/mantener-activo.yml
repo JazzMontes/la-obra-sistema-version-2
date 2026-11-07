@@ -1,0 +1,28 @@
+# Supabase pausa los proyectos gratuitos después de 7 días sin actividad.
+# Este flujo "toca" la API cada 3 días para que eso no pase.
+# Requiere las variables del repositorio SUPABASE_URL y SUPABASE_KEY
+# (Settings → Secrets and variables → Actions → Variables).
+# Nota: GitHub desactiva los flujos programados si el repositorio pasa 60 días
+# sin cambios; si te llega ese aviso, vuelve a activarlo en la pestaña Actions.
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    - cron: '17 15 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SUPABASE_URL != '' && vars.SUPABASE_KEY != '' }}
+    steps:
+      - name: Consultar health.php
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+        run: |
+          AUTH=()
+          case "$SUPABASE_KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $SUPABASE_KEY");; esac
+          curl -sS --fail-with-body -X POST "$SUPABASE_URL/rest/v1/rpc/la_obra_v2_api" \
+            -H "apikey: $SUPABASE_KEY" "${AUTH[@]}" -H "Content-Type: application/json" \
+            -d '{"p_path":"health.php","p_method":"GET"}'

@@ -1,0 +1,62 @@
+# Compila la app y la publica en GitHub Pages cada vez que se sube un cambio a "main".
+# Dirección final: https://<tu-usuario>.github.io/la-obra-sistema-version-2/
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      # Opcional: si definiste las variables del repositorio SUPABASE_URL y SUPABASE_KEY
+      # (Settings → Secrets and variables → Actions → Variables), se usan esas.
+      # Si no, se usan las que estén escritas en src/environments/environment.prod.ts.
+      - name: Configurar Supabase
+        if: ${{ vars.SUPABASE_URL != '' && vars.SUPABASE_KEY != '' }}
+        run: node scripts/configurar-supabase.mjs
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+
+      - name: Compilar
+        run: npx ng build --configuration production --base-href "/${{ github.event.repository.name }}/"
+
+      - name: Preparar para GitHub Pages
+        run: |
+          cp www/index.html www/404.html
+          touch www/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

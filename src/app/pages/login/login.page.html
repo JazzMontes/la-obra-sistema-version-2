@@ -1,0 +1,75 @@
+<ion-content>
+  <div class="login">
+    <aside class="hero">
+      <div class="hero-brand">
+        <div class="mark">LO</div>
+        <span>La Obra</span>
+      </div>
+      <div class="hero-copy">
+        <h2>Compras, inventario, costos y ventas en un mismo lugar.</h2>
+        <p>Lo que compras alimenta el inventario y el costo de tus recetas. Lo que vendes se descuenta solo.</p>
+      </div>
+      <div class="hero-foot">Sistema de punto de venta y costos · versión 2</div>
+    </aside>
+
+    <main class="panel">
+      <form class="form" (ngSubmit)="login()">
+        <div class="mobile-brand">
+          <div class="mark">LO</div>
+          <span>La Obra</span>
+        </div>
+        <h1>Iniciar sesión</h1>
+        <p class="muted">Usa la cuenta que te dio el administrador.</p>
+
+        <div class="field">
+          <label for="lg-user">Usuario</label>
+          <input id="lg-user" name="username" class="input" [(ngModel)]="username" autocomplete="username" autocapitalize="off" />
+        </div>
+        <div class="field">
+          <label for="lg-pass">Contraseña</label>
+          <div class="input-group">
+            <input id="lg-pass" name="password" class="input" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password" autocomplete="current-password" />
+            <button type="button" class="addon eye" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              <app-icon name="eye"></app-icon>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-error" *ngIf="error">
+          {{ error }}
+          <button type="button" class="link small tech-link" *ngIf="techText" (click)="showTech = !showTech">{{ showTech ? 'Ocultar' : 'Ver' }} detalles técnicos</button>
+          <pre *ngIf="showTech">{{ techText }}</pre>
+        </div>
+
+        <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Entrando…' : 'Entrar' }}</button>
+
+        <!-- Conexión con Supabase -->
+        <div class="server" [class.open]="serverOpen">
+          <button type="button" class="server-toggle" (click)="serverOpen = !serverOpen">
+            <span class="status-dot" [class.ok]="serverStatus === 'ok'" [class.fail]="serverStatus === 'fail'" [class.warn]="serverStatus === 'warn'"></span>
+            <span class="grow">
+              {{ serverLabel ? 'Supabase · ' + serverLabel : 'Configura la conexión' }}
+              <span class="small muted" *ngIf="serverMessage"> · {{ serverMessage }}</span>
+            </span>
+            <app-icon name="chevron" class="chev"></app-icon>
+          </button>
+          <div class="server-body" *ngIf="serverOpen">
+            <div class="field">
+              <label for="lg-url">Dirección del proyecto (Project URL)</label>
+              <input id="lg-url" name="url" class="input" [(ngModel)]="serverUrl" placeholder="https://abcd1234.supabase.co" autocapitalize="off" inputmode="url" />
+            </div>
+            <div class="field">
+              <label for="lg-key">Clave pública (publishable o anon)</label>
+              <input id="lg-key" name="key" class="input" [(ngModel)]="serverKey" placeholder="sb_publishable_… o eyJ…" autocapitalize="off" />
+              <span class="hint">Supabase → Project Settings → API Keys. Nunca uses la clave secreta (service_role).</span>
+            </div>
+            <div class="row">
+              <button class="btn btn-dark btn-sm" type="button" (click)="saveServer()" [disabled]="testing">{{ testing ? 'Probando…' : 'Guardar y probar' }}</button>
+              <a class="link small" routerLink="/data-origins">Configuración avanzada</a>
+            </div>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+</ion-content>

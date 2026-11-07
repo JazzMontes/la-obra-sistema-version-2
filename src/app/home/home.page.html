@@ -1,0 +1,168 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Inicio</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-refresher slot="fixed" (ionRefresh)="load($event)">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <p class="eyebrow">{{ today }}</p>
+        <h1>Hola, {{ firstName }}</h1>
+      </div>
+      <div class="row wrap">
+        <a class="btn" routerLink="/purchases" *ngIf="isAdmin"><app-icon name="purchases"></app-icon>Registrar compra</a>
+        <a class="btn btn-primary" routerLink="/pos"><app-icon name="pos"></app-icon>Nueva venta</a>
+      </div>
+    </div>
+
+    <div class="notice danger" *ngIf="error">
+      <app-icon name="alert"></app-icon>
+      <div class="grow">{{ error }}</div>
+      <button class="link" type="button" (click)="load()">Reintentar</button>
+    </div>
+
+    <!-- Indicadores del día -->
+    <div class="grid-4" *ngIf="summary as s">
+      <div class="card kpi">
+        <div class="kpi-label"><app-icon name="cash"></app-icon>Ventas de hoy</div>
+        <div class="kpi-value">{{ s.today.sales | money }}</div>
+        <div class="kpi-note" *ngIf="salesDelta !== null">
+          <span [class.text-success]="salesDelta >= 0" [class.text-danger]="salesDelta < 0">{{ salesDelta >= 0 ? '+' : '' }}{{ salesDelta }}%</span>
+          contra ayer
+        </div>
+        <div class="kpi-note" *ngIf="salesDelta === null">{{ isAdmin ? 'Todas las cajas' : 'Tus ventas' }}</div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-label"><app-icon name="receipt"></app-icon>Pedidos cobrados</div>
+        <div class="kpi-value">{{ s.today.orders }}</div>
+        <div class="kpi-note">Ticket promedio {{ s.today.average_ticket | money }}</div>
+      </div>
+      <a class="card kpi kpi-link" routerLink="/orders">
+        <div class="kpi-label"><app-icon name="orders"></app-icon>Pedidos pendientes</div>
+        <div class="kpi-value">{{ s.pending.to_deliver }}</div>
+        <div class="kpi-note">
+          por entregar<span *ngIf="s.pending.to_charge"> · {{ s.pending.to_charge }} por cobrar</span>
+        </div>
+      </a>
+      <div class="card kpi" *ngIf="isAdmin">
+        <div class="kpi-label"><app-icon name="reports"></app-icon>Utilidad bruta hoy</div>
+        <div class="kpi-value">{{ s.today.gross_profit | money }}</div>
+        <div class="kpi-note">Ventas menos costo de recetas</div>
+      </div>
+      <a class="card kpi kpi-link" routerLink="/inventory" *ngIf="!isAdmin">
+        <div class="kpi-label"><app-icon name="inventory"></app-icon>Alertas de inventario</div>
+        <div class="kpi-value">{{ s.stock_alerts_total }}</div>
+        <div class="kpi-note">insumos bajos o agotados</div>
+      </a>
+    </div>
+
+    <div class="grid-4" *ngIf="loading && !summary">
+      <div class="card kpi skeleton-card" *ngFor="let i of [1, 2, 3, 4]"></div>
+    </div>
+
+    <div class="home-grid" *ngIf="summary as s">
+      <!-- Inventario -->
+      <section class="card">
+        <div class="card-head">
+          <h3>Inventario por reabastecer</h3>
+          <a class="small" routerLink="/inventory">Ver inventario</a>
+        </div>
+        <div class="list" *ngIf="s.stock_alerts.length; else stockOk">
+          <a class="list-row clickable" *ngFor="let a of s.stock_alerts" routerLink="/inventory">
+            <div class="avatar avatar-sm"><app-icon name="inputs"></app-icon></div>
+            <div class="grow">
+              <div class="title">{{ a.name }}</div>
+              <div class="sub">
+                Quedan {{ a.stock | qty }} {{ a.unit }}<span *ngIf="a.min_stock !== null"> · mínimo {{ a.min_stock | qty }}</span>
+              </div>
+            </div>
+            <span class="badge" [class.badge-danger]="a.level === 'out'" [class.badge-warning]="a.level === 'low'">
+              {{ a.level === 'out' ? 'Agotado' : 'Bajo' }}
+            </span>
+          </a>
+          <div class="card-foot small muted" *ngIf="s.stock_alerts_total > s.stock_alerts.length">
+            y {{ s.stock_alerts_total - s.stock_alerts.length }} más
+          </div>
+        </div>
+        <ng-template #stockOk>
+          <div class="empty">
+            <app-icon name="check"></app-icon>
+            <h3>Todo en orden</h3>
+            <p>Ningún insumo está por debajo de su mínimo.</p>
+          </div>
+        </ng-template>
+      </section>
+
+      <!-- Más vendidos -->
+      <section class="card">
+        <div class="card-head">
+          <h3>Más vendidos hoy</h3>
+          <a class="small" routerLink="/reports" *ngIf="isAdmin">Reportes</a>
+        </div>
+        <div class="list" *ngIf="s.top_products.length; else noSales">
+          <div class="list-row" *ngFor="let p of s.top_products; let i = index">
+            <div class="rank">{{ i + 1 }}</div>
+            <div class="grow">
+              <div class="title">{{ p.name }}</div>
+              <div class="sub">{{ p.quantity }} vendidos</div>
+            </div>
+            <div class="end strong num">{{ p.revenue | money }}</div>
+          </div>
+        </div>
+        <ng-template #noSales>
+          <div class="empty">
+            <app-icon name="pos"></app-icon>
+            <h3>Aún no hay ventas hoy</h3>
+            <p>Las ventas que registres en el punto de venta aparecerán aquí.</p>
+            <a class="btn btn-primary btn-sm" routerLink="/pos">Abrir punto de venta</a>
+          </div>
+        </ng-template>
+      </section>
+    </div>
+
+    <!-- Mes en curso -->
+    <ng-container *ngIf="isAdmin && summary?.month as m">
+      <div class="section-title"><h2>Este mes</h2></div>
+      <div class="grid-3">
+        <div class="card kpi">
+          <div class="kpi-label">Ventas</div>
+          <div class="kpi-value">{{ m.sales | money }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Compras</div>
+          <div class="kpi-value">{{ m.purchases | money }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Gastos</div>
+          <div class="kpi-value">{{ m.expenses | money }}</div>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- Cómo funciona -->
+    <ng-container *ngIf="isAdmin">
+      <div class="section-title">
+        <h2>Cómo fluye la información</h2>
+      </div>
+      <p class="muted small flow-intro">
+        Insumos, preparaciones y recetas se configuran una vez. En el día a día solo capturas compras y ventas:
+        las compras alimentan inventario y costos, y cada venta entregada descuenta su receta del inventario.
+      </p>
+      <div class="flow">
+        <a class="flow-step card" *ngFor="let f of flow" [routerLink]="f.url">
+          <span class="flow-n">{{ f.n }}</span>
+          <app-icon [name]="f.icon"></app-icon>
+          <span class="flow-title">{{ f.title }}</span>
+          <span class="flow-text">{{ f.text }}</span>
+        </a>
+      </div>
+    </ng-container>
+  </div>
+</ion-content>

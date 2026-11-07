@@ -1,0 +1,75 @@
+.diagram {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 90px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  text-align: center;
+
+  app-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--brand-ink);
+  }
+
+  span {
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+}
+
+.link-line {
+  flex: 1;
+  min-width: 50px;
+  height: 2px;
+  background: var(--border-strong);
+  position: relative;
+
+  span {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+}
+
+.url {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  word-break: break-all;
+}
+
+.code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.mig {
+  margin: 6px 0;
+  padding-left: 18px;
+
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+}

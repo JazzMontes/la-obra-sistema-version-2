@@ -1,0 +1,86 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-menu-button *ngIf="loggedIn"></ion-menu-button>
+      <a class="btn btn-ghost btn-icon" routerLink="/login" *ngIf="!loggedIn" aria-label="Volver"><app-icon name="back"></app-icon></a>
+    </ion-buttons>
+    <ion-title>Conexión y respaldo</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Conexión con Supabase</h1>
+        <p>La app (web o APK) guarda y consulta la información en internet, en la base de datos PostgreSQL del proyecto de Supabase. Ya no depende de una computadora con XAMPP.</p>
+      </div>
+    </div>
+
+    <div class="diagram card card-pad">
+      <div class="node"><app-icon name="pos"></app-icon><strong>App</strong><span>Web o APK</span></div>
+      <div class="link-line"><span>HTTPS + JSON</span></div>
+      <div class="node"><app-icon name="server"></app-icon><strong>API</strong><span>la_obra_v2_api</span></div>
+      <div class="link-line"><span>SQL</span></div>
+      <div class="node"><app-icon name="layers"></app-icon><strong>PostgreSQL</strong><span>esquema la_obra_v2</span></div>
+    </div>
+
+    <div class="card card-pad stack">
+      <div class="field">
+        <label for="do-url">Dirección del proyecto (Project URL)</label>
+        <input id="do-url" class="input" [(ngModel)]="form.supabaseUrl" placeholder="https://abcd1234.supabase.co" autocapitalize="off" inputmode="url" />
+      </div>
+      <div class="field">
+        <label for="do-key">Clave pública (publishable o anon)</label>
+        <input id="do-key" class="input" [(ngModel)]="form.supabaseKey" placeholder="sb_publishable_… o eyJ…" autocapitalize="off" />
+        <span class="hint">Supabase → Project Settings → API Keys. Nunca pegues aquí la clave secreta (service_role).</span>
+      </div>
+      <div class="url num">{{ preview }}</div>
+      <div class="row wrap">
+        <button class="btn btn-primary" type="button" (click)="save()">Guardar</button>
+        <button class="btn" type="button" (click)="test()" [disabled]="testing">{{ testing ? 'Probando…' : 'Probar conexión' }}</button>
+        <button class="btn btn-ghost" type="button" *ngIf="custom" (click)="resetToDefault()">Usar la configuración de la app</button>
+      </div>
+      <div class="notice" *ngIf="result" [class.success]="result.ok" [class.danger]="!result.ok">
+        <app-icon [name]="result.ok ? 'check' : 'alert'"></app-icon>
+        <div>
+          <strong>{{ result.ok ? 'Conectado' : 'Sin conexión' }}</strong> · {{ result.text }}
+          <span *ngIf="result.ms"> · {{ result.ms }} ms</span>
+          <span *ngIf="result.version"> · base v{{ result.version }}</span>
+        </div>
+      </div>
+      <div class="notice warning" *ngIf="result && !result.ok">
+        <app-icon name="alert"></app-icon>
+        <div>
+          Si el proyecto gratuito estuvo <strong>7 días sin uso</strong>, Supabase lo pausa: entra a
+          <strong>supabase.com</strong>, abre el proyecto <strong>la-obra-sistema-version-2</strong> y presiona
+          <strong>Restore project</strong>. Tus datos no se pierden.
+        </div>
+      </div>
+    </div>
+
+    <ng-container *ngIf="loggedIn && isAdmin">
+      <div class="section-title"><h2>Respaldo de la información</h2></div>
+      <div class="card card-pad stack">
+        <p class="muted">Descarga un archivo con TODA la información (usuarios, catálogo, ventas, compras, gastos, mermas, inventario y fotos). Guárdalo en tu computadora o en Google Drive. Se recomienda una vez por semana.</p>
+        <label class="check small"><input type="checkbox" [(ngModel)]="includeFiles" />Incluir fotos de productos y tickets</label>
+        <div class="row wrap">
+          <button class="btn btn-primary" type="button" (click)="exportBackup()" [disabled]="exporting">{{ exporting ? 'Generando…' : 'Descargar respaldo' }}</button>
+        </div>
+      </div>
+
+      <div class="card card-pad stack">
+        <strong>Restaurar un respaldo</strong>
+        <p class="muted small">Reemplaza toda la información actual por la del archivo. Úsalo solo si se perdió o dañó la información.</p>
+        <input type="file" accept="application/json,.json" (change)="pickRestore($event)" />
+        <div class="notice" *ngIf="restoreInfo"><app-icon name="alert"></app-icon><div>{{ restoreInfo }}</div></div>
+        <div class="row wrap">
+          <button class="btn btn-danger" type="button" (click)="restore()" [disabled]="!restoreFile || restoring">{{ restoring ? 'Restaurando…' : 'Restaurar' }}</button>
+        </div>
+      </div>
+    </ng-container>
+
+    <div class="section-title"><h2>Configuración guardada (JSON)</h2></div>
+    <pre class="card card-pad code">{{ json }}</pre>
+  </div>
+</ion-content>

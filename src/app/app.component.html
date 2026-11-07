@@ -1,0 +1,96 @@
+<ion-app>
+  <ion-split-pane contentId="main" when="lg" [disabled]="!showMenu">
+    <!-- Menú lateral -->
+    <ion-menu contentId="main" type="overlay" [disabled]="!showMenu" class="side-menu">
+      <div class="menu-shell">
+        <div class="brand">
+          <div class="brand-mark">LO</div>
+          <div>
+            <div class="brand-name">La Obra</div>
+            <div class="brand-sub">Punto de venta y costos</div>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <div class="nav-group" *ngFor="let g of groups">
+            <div class="nav-title" *ngIf="g.title">{{ g.title }}</div>
+            <button
+              type="button"
+              class="nav-item"
+              *ngFor="let item of g.items"
+              [class.active]="isActive(item.url)"
+              (click)="go(item.url)"
+            >
+              <app-icon [name]="item.icon"></app-icon>
+              <span>{{ item.label }}</span>
+            </button>
+          </div>
+        </nav>
+
+        <div class="menu-user">
+          <button type="button" class="user-chip" (click)="go('/profile')">
+            <span class="avatar avatar-sm">{{ initials }}</span>
+            <span class="grow">
+              <span class="user-name">{{ user?.name }}</span>
+              <span class="user-role">{{ isAdmin ? 'Administrador' : 'Empleado' }}</span>
+            </span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-icon" (click)="logout()" aria-label="Cerrar sesión">
+            <app-icon name="logout"></app-icon>
+          </button>
+        </div>
+      </div>
+    </ion-menu>
+
+    <ion-router-outlet id="main"></ion-router-outlet>
+  </ion-split-pane>
+
+  <!-- Sin conexión -->
+  <div class="offline-bar" *ngIf="!online">
+    <app-icon name="wifiOff"></app-icon>
+    Sin conexión. Lo que se pueda guardar sin red se sincronizará después.
+  </div>
+
+  <!-- Avisos -->
+  <div class="toasts" aria-live="polite">
+    <div class="toast" *ngFor="let t of ui.toasts()" [class]="'toast toast-' + t.kind" (click)="ui.dismiss(t.id)">
+      <app-icon [name]="t.kind === 'error' ? 'alert' : t.kind === 'info' ? 'info' : 'check'"></app-icon>
+      <span>{{ t.text }}</span>
+    </div>
+  </div>
+
+  <!-- Confirmación -->
+  <div class="dialog-backdrop" *ngIf="ui.confirmState() as c" (click)="ui.answer(false)">
+    <div class="dialog" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+      <h2>{{ c.title }}</h2>
+      <p>{{ c.message }}</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="ui.answer(false)">Cancelar</button>
+        <button type="button" class="btn" [class.btn-danger]="c.danger" [class.btn-dark]="!c.danger" (click)="ui.answer(true)">
+          {{ c.confirmText }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diagnóstico: no hubo respuesta del servidor -->
+  <div class="dialog-backdrop" *ngIf="diagnostics.modalOpen" (click)="closeDiagnostics()">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" (click)="$event.stopPropagation()">
+      <div class="dialog-icon"><app-icon name="wifiOff"></app-icon></div>
+      <h2>No hay respuesta de Supabase</h2>
+      <p>{{ diagnostics.modalMessage }}</p>
+      <ul class="checklist">
+        <li>Revisa que el dispositivo tenga internet (Wi-Fi o datos).</li>
+        <li>Entra a supabase.com: si el proyecto dice <strong>Paused</strong>, presiona <strong>Restore</strong> y espera un par de minutos.</li>
+        <li>Verifica la dirección y la clave en <strong>Conexión y respaldo</strong>.</li>
+      </ul>
+      <button type="button" class="link small" (click)="showTech = !showTech">
+        {{ showTech ? 'Ocultar' : 'Ver' }} detalles técnicos
+      </button>
+      <pre *ngIf="showTech">{{ diagnostics.modalDetails }}</pre>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-dark" (click)="closeDiagnostics()">Entendido</button>
+      </div>
+    </div>
+  </div>
+</ion-app>

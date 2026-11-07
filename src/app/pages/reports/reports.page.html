@@ -1,0 +1,170 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Reportes</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-sm" type="button" (click)="print()" [disabled]="!report"><app-icon name="receipt"></app-icon><span class="desktop-only">Imprimir</span></button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Reportes y corte</h1>
+        <p *ngIf="report">Del {{ report.from | dateMx }} al {{ report.to | dateMx }}</p>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="preset === 'today'" (click)="setPreset('today')">Hoy</button>
+        <button type="button" [class.active]="preset === 'week'" (click)="setPreset('week')">7 días</button>
+        <button type="button" [class.active]="preset === 'month'" (click)="setPreset('month')">Este mes</button>
+        <button type="button" [class.active]="preset === 'custom'" (click)="setPreset('custom')">Fechas</button>
+      </div>
+    </div>
+
+    <div class="card card-pad custom" *ngIf="preset === 'custom'">
+      <div class="field">
+        <label for="r-from">Desde</label>
+        <input id="r-from" class="input" type="date" [(ngModel)]="from" />
+      </div>
+      <div class="field">
+        <label for="r-to">Hasta</label>
+        <input id="r-to" class="input" type="date" [(ngModel)]="to" />
+      </div>
+      <button class="btn btn-dark" type="button" (click)="load()">Consultar</button>
+    </div>
+
+    <ng-container *ngIf="report">
+      <!-- Totales -->
+      <div class="grid-4">
+        <div class="card kpi">
+          <div class="kpi-label">Ventas</div>
+          <div class="kpi-value">{{ t.sales | money }}</div>
+          <div class="kpi-note">{{ t.orders }} pedidos · ticket {{ t.average_ticket | money }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Utilidad bruta</div>
+          <div class="kpi-value">{{ t.gross_profit | money }}</div>
+          <div class="kpi-note">Margen {{ t.gross_margin === null ? '—' : (t.gross_margin | qty: 1) + '%' }} · costo {{ t.cost_of_sales | money }}</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Compras</div>
+          <div class="kpi-value">{{ t.purchases | money }}</div>
+          <div class="kpi-note">Reabastecimiento del periodo</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Gastos y mermas</div>
+          <div class="kpi-value">{{ t.expenses + t.waste | money }}</div>
+          <div class="kpi-note">Gastos {{ t.expenses | money }} · mermas {{ t.waste | money }}</div>
+        </div>
+      </div>
+      <div class="notice warning gap" *ngIf="t.lines_without_cost">
+        <app-icon name="alert"></app-icon>
+        <div>{{ t.lines_without_cost }} renglón(es) vendidos no tenían receta o precio de compra; su costo cuenta como $0.</div>
+      </div>
+
+      <div class="two">
+        <!-- Ventas por día -->
+        <section class="card">
+          <div class="card-head"><h3>Ventas por día</h3></div>
+          <div class="card-pad">
+            <div class="columns" *ngIf="report.daily.length; else noData">
+              <div class="col" *ngFor="let d of report.daily">
+                <span class="col-value num">{{ d.sales | money }}</span>
+                <div class="col-bar"><span [style.height.%]="(d.sales / maxDaily) * 100"></span></div>
+                <span class="col-label">{{ dayLabel(d.day) }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Corte de caja -->
+        <section class="card cut">
+          <div class="card-head"><h3>Corte de caja</h3><span class="small muted">Efectivo</span></div>
+          <div class="card-pad">
+            <div class="cut-line"><span>Ventas en efectivo</span><span class="num">{{ report.cash_cut.cash_sales | money }}</span></div>
+            <div class="cut-line"><span>Compras pagadas en efectivo</span><span class="num">−{{ report.cash_cut.cash_purchases | money }}</span></div>
+            <div class="cut-line"><span>Gastos y salidas</span><span class="num">−{{ report.cash_cut.expenses | money }}</span></div>
+            <div class="cut-line total"><span>Efectivo esperado</span><strong class="num">{{ report.cash_cut.expected_cash | money }}</strong></div>
+            <div class="field counted">
+              <label for="r-count">Efectivo contado en caja</label>
+              <div class="input-group">
+                <span class="addon">$</span>
+                <input id="r-count" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="counted" />
+              </div>
+            </div>
+            <div class="diff" *ngIf="cashDifference !== null" [class.ok]="cashDifference === 0" [class.over]="cashDifference > 0" [class.short]="cashDifference < 0">
+              {{ cashDifference === 0 ? 'La caja cuadra' : cashDifference > 0 ? 'Sobran' : 'Faltan' }}
+              <strong class="num" *ngIf="cashDifference !== 0">{{ (cashDifference < 0 ? -cashDifference : cashDifference) | money }}</strong>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="three">
+        <section class="card">
+          <div class="card-head"><h3>Productos más vendidos</h3></div>
+          <div class="card-pad">
+            <ng-container *ngIf="report.products.length; else noData">
+              <div class="hbar" *ngFor="let p of topProducts">
+                <span class="ellipsis">{{ p.name }} <span class="muted small">×{{ p.quantity | qty: 0 }}</span></span>
+                <div class="bar"><span [style.width.%]="(p.revenue / max(report.products, 'revenue')) * 100"></span></div>
+                <span class="num strong">{{ p.revenue | money }}</span>
+              </div>
+            </ng-container>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h3>Por categoría</h3></div>
+          <div class="card-pad">
+            <ng-container *ngIf="report.categories.length; else noData">
+              <div class="hbar" *ngFor="let c of report.categories">
+                <span class="ellipsis">{{ c.name }}</span>
+                <div class="bar"><span [style.width.%]="(c.revenue / max(report.categories, 'revenue')) * 100"></span></div>
+                <span class="num strong">{{ c.revenue | money }}</span>
+              </div>
+            </ng-container>
+          </div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h3>Por método de pago</h3></div>
+          <div class="card-pad">
+            <ng-container *ngIf="report.payment_methods.length; else noData">
+              <div class="hbar" *ngFor="let m of report.payment_methods">
+                <span class="ellipsis">{{ m.name }} <span class="muted small">{{ m.orders | qty: 0 }}</span></span>
+                <div class="bar"><span [style.width.%]="(m.amount / max(report.payment_methods, 'amount')) * 100"></span></div>
+                <span class="num strong">{{ m.amount | money }}</span>
+              </div>
+            </ng-container>
+          </div>
+        </section>
+      </div>
+
+      <!-- Resultado -->
+      <section class="card result">
+        <div class="card-head"><h3>Resultado del periodo</h3></div>
+        <div class="card-pad">
+          <div class="cut-line"><span>Ventas</span><span class="num">{{ t.sales | money }}</span></div>
+          <div class="cut-line"><span>Costo de lo vendido (según recetas)</span><span class="num">−{{ t.cost_of_sales | money }}</span></div>
+          <div class="cut-line sub"><span>Utilidad bruta</span><span class="num">{{ t.gross_profit | money }}</span></div>
+          <div class="cut-line"><span>Gastos</span><span class="num">−{{ t.expenses | money }}</span></div>
+          <div class="cut-line"><span>Mermas</span><span class="num">−{{ t.waste | money }}</span></div>
+          <div class="cut-line total"><span>Resultado de operación</span><strong class="num" [class.text-danger]="netResult < 0">{{ netResult | money }}</strong></div>
+          <p class="small muted note">
+            Las compras no se restan aquí: se convierten en inventario y se reflejan en el costo de lo vendido conforme se usan.
+            <span *ngIf="t.cancelled_orders">Pedidos cancelados: {{ t.cancelled_orders }} ({{ t.cancelled_amount | money }}).</span>
+          </p>
+        </div>
+      </section>
+    </ng-container>
+
+    <div class="card" *ngIf="loading && !report">
+      <div class="skeleton" *ngFor="let i of [1, 2, 3, 4]"></div>
+    </div>
+  </div>
+</ion-content>
+
+<ng-template #noData>
+  <p class="muted small empty-inline">Sin ventas en el periodo.</p>
+</ng-template>

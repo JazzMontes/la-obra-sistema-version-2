@@ -1,0 +1,42 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Mi perfil</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="card card-pad head">
+      <div class="avatar big">{{ initials }}</div>
+      <div>
+        <h1>{{ user?.name }}</h1>
+        <span class="badge badge-brand">{{ user?.role === 'admin' ? 'Administrador' : 'Empleado' }}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Datos de la cuenta</h3></div>
+      <div class="card-pad stack">
+        <div class="field">
+          <label for="pf-name">Nombre</label>
+          <input id="pf-name" class="input" [(ngModel)]="form.name" maxlength="100" />
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="pf-user">Usuario</label>
+            <input id="pf-user" class="input" [(ngModel)]="form.username" autocapitalize="off" maxlength="50" />
+          </div>
+          <div class="field">
+            <label for="pf-email">Correo</label>
+            <input id="pf-email" class="input" type="email" [(ngModel)]="form.email" maxlength="150" />
+          </div>
+        </div>
+      </div>
+      <div class="card-foot row-between">
+        <a class="btn btn-ghost" routerLink="/change-password"><app-icon name="lock"></app-icon>Cambiar contraseña</a>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </div>
+</ion-content>

@@ -1,0 +1,7 @@
+{
+  "name": "la-obra-sistema-version-2",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}
