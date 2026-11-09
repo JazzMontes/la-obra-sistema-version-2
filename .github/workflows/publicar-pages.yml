@@ -27,8 +27,7 @@ jobs:
           node-version: 22
 
       - name: Instalar dependencias
-        run: npm install --no-audit --no-fund
-
+      run: npm install --no-audit --no-fund --legacy-peer-deps
       # Opcional: si definiste las variables del repositorio SUPABASE_URL y SUPABASE_KEY
       # (Settings → Secrets and variables → Actions → Variables), se usan esas.
       # Si no, se usan las que estén escritas en src/environments/environment.prod.ts.
