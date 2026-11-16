@@ -1,0 +1,254 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Asistencia</ion-title>
+    <ion-buttons slot="end" *ngIf="isAdmin">
+      <button class="btn btn-sm" type="button" (click)="openConfig()"><app-icon name="pin"></app-icon>Ubicación del negocio</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Registro de llegada</h1>
+        <p>Registra tu entrada y salida desde tu teléfono. Solo se puede hacer estando en el negocio: la app usa el GPS para comprobarlo.</p>
+      </div>
+    </div>
+
+    <!-- Aviso: el negocio no tiene ubicación configurada -->
+    <div class="notice warning block-gap" *ngIf="!loading && !location">
+      <app-icon name="alert"></app-icon>
+      <div>
+        <strong>Falta configurar la ubicación del negocio.</strong>
+        <div *ngIf="isAdmin">Párate en el local y toca <em>Ubicación del negocio</em> &gt; <em>Usar mi ubicación actual</em>.</div>
+        <div *ngIf="!isAdmin">Pide al administrador que la configure para poder registrar tu llegada.</div>
+      </div>
+    </div>
+
+    <!-- 1. Permiso: se explica ANTES de pedirlo -->
+    <div class="card card-pad perm-card block-gap" *ngIf="!reading && (perm === 'prompt' || perm === 'unknown') && !geoError">
+      <div class="perm-icon"><app-icon name="pin"></app-icon></div>
+      <h3>Necesitamos tu ubicación</h3>
+      <p class="muted">
+        Se usa solo para comprobar que estás en {{ location?.name || 'el negocio' }} cuando registras tu entrada o salida.
+        No se rastrea en segundo plano y se apaga al salir de esta pantalla.
+      </p>
+      <button class="btn btn-primary" type="button" (click)="locate()" [disabled]="locating">
+        <app-icon name="target"></app-icon>{{ locating ? 'Esperando permiso…' : 'Permitir ubicación' }}
+      </button>
+      <p class="small faint">Tu teléfono te preguntará si permites el acceso. Elige “Mientras se usa la app”.</p>
+    </div>
+
+    <!-- 2. Errores de permiso / GPS -->
+    <div class="notice block-gap" [class.danger]="geoError.kind === 'denied' || geoError.kind === 'insecure' || geoError.kind === 'unsupported'" [class.warning]="geoError.kind === 'timeout' || geoError.kind === 'unavailable' || geoError.kind === 'unknown'" *ngIf="geoError">
+      <app-icon name="alert"></app-icon>
+      <div class="grow">
+        <strong>{{ geoError.message }}</strong>
+        <div>{{ geoError.help }}</div>
+        <button class="btn btn-sm retry" type="button" (click)="locate()" [disabled]="locating" *ngIf="geoError.kind !== 'unsupported'">
+          <app-icon name="refresh"></app-icon>{{ locating ? 'Buscando…' : 'Reintentar' }}
+        </button>
+      </div>
+    </div>
+    <div class="notice danger block-gap" *ngIf="!geoError && (perm === 'denied' || perm === 'insecure' || perm === 'unsupported')">
+      <app-icon name="lock"></app-icon>
+      <div class="grow">
+        <ng-container [ngSwitch]="perm">
+          <ng-container *ngSwitchCase="'denied'">
+            <strong>El permiso de ubicación está bloqueado.</strong>
+            <div>Actívalo en Ajustes &gt; Aplicaciones &gt; La Obra &gt; Permisos &gt; Ubicación (o en el candado del navegador) y toca Reintentar.</div>
+          </ng-container>
+          <ng-container *ngSwitchCase="'insecure'">
+            <strong>La ubicación no está disponible en una página http.</strong>
+            <div>Usa la app instalada (APK), https:// o http://localhost.</div>
+          </ng-container>
+          <ng-container *ngSwitchDefault>
+            <strong>Este dispositivo no permite obtener la ubicación.</strong>
+          </ng-container>
+        </ng-container>
+        <button class="btn btn-sm retry" type="button" (click)="locate()" [disabled]="locating" *ngIf="perm !== 'unsupported'"><app-icon name="refresh"></app-icon>Reintentar</button>
+      </div>
+    </div>
+
+    <!-- 3. Coordenadas y radar -->
+    <div class="card block-gap" *ngIf="reading || locating">
+      <div class="card-head">
+        <div class="row">
+          <h3>Tu ubicación</h3>
+          <span class="badge badge-info" *ngIf="live">En vivo</span>
+          <span class="small muted" *ngIf="reading && !live">{{ readingAge }}</span>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" type="button" (click)="toggleLive()" [class.btn-dark]="live">{{ live ? 'Detener' : 'Seguir en vivo' }}</button>
+          <button class="btn btn-sm btn-icon" type="button" (click)="locate()" [disabled]="locating" aria-label="Actualizar ubicación"><app-icon name="refresh"></app-icon></button>
+        </div>
+      </div>
+
+      <div class="card-pad" *ngIf="locating && !reading">
+        <div class="skeleton"></div>
+        <p class="small muted">Buscando señal GPS…</p>
+      </div>
+
+      <div class="card-pad geo-grid" *ngIf="reading as r">
+        <div class="coords">
+          <div class="coord">
+            <span class="label small muted">Latitud</span>
+            <strong class="num">{{ r.latitude | number: '1.6-6' }}</strong>
+            <span class="small faint">{{ toDms(r.latitude, true) }}</span>
+          </div>
+          <div class="coord">
+            <span class="label small muted">Longitud</span>
+            <strong class="num">{{ r.longitude | number: '1.6-6' }}</strong>
+            <span class="small faint">{{ toDms(r.longitude, false) }}</span>
+          </div>
+          <div class="coord">
+            <span class="label small muted">Precisión</span>
+            <strong class="num" [class.text-warning]="lowAccuracy">± {{ r.accuracy | number: '1.0-0' }} m</strong>
+            <span class="small faint">{{ lowAccuracy ? 'Baja: activa el GPS de alta precisión' : 'Margen de error del GPS' }}</span>
+          </div>
+          <div class="coord" *ngIf="distance !== null">
+            <span class="label small muted">Distancia a {{ location?.name }}</span>
+            <strong class="num" [class.text-success]="inside" [class.text-danger]="!inside">{{ distance | number: '1.0-0' }} m</strong>
+            <span class="small" [class.text-success]="inside" [class.text-danger]="!inside">{{ inside ? 'Dentro del área permitida' : 'Fuera del área (' + location?.radius_m + ' m)' }}</span>
+          </div>
+          <a class="link small" [href]="mapUrl(r.latitude, r.longitude)" target="_blank" rel="noopener">Ver en el mapa</a>
+        </div>
+
+        <!-- Radar: el negocio al centro y tú como punto -->
+        <figure class="radar" *ngIf="radar as rd">
+          <svg viewBox="0 0 200 200" role="img" [attr.aria-label]="'Estás a ' + (distance | number: '1.0-0') + ' metros del negocio'">
+            <circle cx="100" cy="100" r="96" class="ring" />
+            <circle cx="100" cy="100" r="64" class="ring" />
+            <circle cx="100" cy="100" r="32" class="ring" />
+            <line x1="100" y1="4" x2="100" y2="196" class="axis" />
+            <line x1="4" y1="100" x2="196" y2="100" class="axis" />
+            <circle cx="100" cy="100" [attr.r]="rd.fence" class="fence" [class.ok]="inside" />
+            <rect x="94" y="94" width="12" height="12" rx="3" class="shop" />
+            <circle [attr.cx]="rd.x" [attr.cy]="rd.y" [attr.r]="rd.acc" class="acc" />
+            <circle [attr.cx]="rd.x" [attr.cy]="rd.y" r="5.5" class="me" [class.out]="rd.outOfView" />
+            <text x="100" y="14" class="north">N</text>
+          </svg>
+          <figcaption class="small muted">
+            <span class="key shop"></span>{{ location?.name }}
+            <span class="key me"></span>Tú
+            · borde ≈ {{ rd.scale }} m<span *ngIf="rd.outOfView"> (estás más lejos)</span>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+
+    <!-- 4. Registrar llegada / salida -->
+    <div class="card card-pad check-card block-gap" *ngIf="location">
+      <div class="row-between">
+        <div>
+          <div class="small muted">Hoy</div>
+          <strong *ngIf="!lastToday">Aún no registras tu llegada</strong>
+          <strong *ngIf="lastToday?.type === 'in'">En turno desde las {{ lastToday.created_at | dateMx: 'time' }}</strong>
+          <strong *ngIf="lastToday?.type === 'out'">Saliste a las {{ lastToday.created_at | dateMx: 'time' }}</strong>
+        </div>
+        <span class="badge" [class.badge-success]="lastToday?.type === 'in'">{{ lastToday?.type === 'in' ? 'Presente' : 'Fuera' }}</span>
+      </div>
+      <div class="field">
+        <label for="att-note">Nota (opcional)</label>
+        <input id="att-note" class="input" [(ngModel)]="note" maxlength="255" placeholder="Ej. llegué tarde por el tráfico" />
+      </div>
+      <div class="form-error" *ngIf="checkError">{{ checkError }}</div>
+      <button
+        class="btn btn-lg btn-block"
+        type="button"
+        [class.btn-primary]="nextType === 'in'"
+        [class.btn-dark]="nextType === 'out'"
+        (click)="check()"
+        [disabled]="saving || locating || perm === 'insecure' || perm === 'unsupported'"
+      >
+        <app-icon [name]="nextType === 'in' ? 'pin' : 'logout'"></app-icon>
+        {{ saving ? 'Registrando…' : locating ? 'Obteniendo ubicación…' : nextType === 'in' ? 'Registrar mi llegada' : 'Registrar mi salida' }}
+      </button>
+      <p class="small faint center">Se toma tu ubicación en ese momento y se guarda con la hora.</p>
+    </div>
+
+    <!-- 5. Historial -->
+    <div class="section-title">{{ isAdmin ? 'Registros del equipo' : 'Tus registros de la semana' }}</div>
+    <div class="card card-pad filters" *ngIf="isAdmin">
+      <div class="field">
+        <label for="a-from">Desde</label>
+        <input id="a-from" class="input" type="date" [(ngModel)]="from" (change)="load()" />
+      </div>
+      <div class="field">
+        <label for="a-to">Hasta</label>
+        <input id="a-to" class="input" type="date" [(ngModel)]="to" (change)="load()" />
+      </div>
+    </div>
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+      <div class="list" *ngIf="!loading && records.length">
+        <div class="list-row" *ngFor="let a of records">
+          <div class="avatar avatar-sm" [class.in]="a.type === 'in'"><app-icon [name]="a.type === 'in' ? 'pin' : 'logout'"></app-icon></div>
+          <div class="grow">
+            <div class="title">
+              {{ a.type === 'in' ? 'Entrada' : 'Salida' }}<span *ngIf="isAdmin"> · {{ a.user_name }}</span>
+            </div>
+            <div class="sub">
+              {{ a.created_at | dateMx: 'datetime' }} · a {{ a.distance_m | number: '1.0-0' }} m (±{{ a.accuracy_m | number: '1.0-0' }} m)
+              <span *ngIf="a.note"> · {{ a.note }}</span>
+            </div>
+            <div class="sub num faint">{{ a.latitude | number: '1.5-5' }}, {{ a.longitude | number: '1.5-5' }}</div>
+          </div>
+          <a class="btn btn-ghost btn-icon end" [href]="mapUrl(a.latitude, a.longitude)" target="_blank" rel="noopener" aria-label="Ver en el mapa"><app-icon name="pin"></app-icon></a>
+        </div>
+      </div>
+      <div class="empty" *ngIf="!loading && !records.length">
+        <app-icon name="clock"></app-icon>
+        <h3>Sin registros</h3>
+        <p>Aquí aparecerán las entradas y salidas con su ubicación.</p>
+      </div>
+    </div>
+  </div>
+</ion-content>
+
+<!-- Ubicación del negocio (solo administrador) -->
+<ion-modal class="sheet sheet-small" [isOpen]="configOpen" (didDismiss)="configOpen = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Ubicación del negocio</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="configOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <p class="small muted">Los empleados solo podrán registrar su llegada dentro de este radio. Lo más fácil: párate dentro del local y usa tu ubicación actual.</p>
+        <button class="btn" type="button" (click)="useCurrentForConfig()" [disabled]="locating">
+          <app-icon name="target"></app-icon>{{ locating ? 'Buscando…' : 'Usar mi ubicación actual' }}
+        </button>
+        <div class="field">
+          <label for="c-name">Nombre del lugar</label>
+          <input id="c-name" class="input" [(ngModel)]="config.name" maxlength="100" />
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="c-lat">Latitud</label>
+            <input id="c-lat" class="input num" type="number" inputmode="decimal" step="0.0000001" [(ngModel)]="config.latitude" />
+          </div>
+          <div class="field">
+            <label for="c-lng">Longitud</label>
+            <input id="c-lng" class="input num" type="number" inputmode="decimal" step="0.0000001" [(ngModel)]="config.longitude" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="c-radius">Radio permitido: {{ config.radius_m }} m</label>
+          <input id="c-radius" type="range" min="20" max="500" step="10" [(ngModel)]="config.radius_m" />
+          <span class="small faint">Recomendado: 80–150 m. El GPS dentro de edificios puede variar 20–50 m.</span>
+        </div>
+        <a class="link small" *ngIf="config.latitude && config.longitude" [href]="mapUrl(config.latitude, config.longitude)" target="_blank" rel="noopener">Revisar el punto en el mapa</a>
+        <div class="form-error" *ngIf="configError">{{ configError }}</div>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn btn-primary" type="button" (click)="saveConfig()" [disabled]="savingConfig">{{ savingConfig ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

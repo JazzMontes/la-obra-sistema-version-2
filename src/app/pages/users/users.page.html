@@ -1,0 +1,109 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Usuarios</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nuevo</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Usuarios</h1>
+        <p>Los administradores configuran todo; los empleados venden, entregan pedidos y registran mermas y gastos.</p>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="status === 'active'" (click)="setStatus('active')">Activos</button>
+        <button type="button" [class.active]="status === 'inactive'" (click)="setStatus('inactive')">Inactivos</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+      <div class="list" *ngIf="!loading && users.length">
+        <div class="list-row" *ngFor="let u of users">
+          <div class="avatar avatar-sm">{{ initials(u) }}</div>
+          <div class="grow">
+            <div class="title">{{ u.name }} <span class="badge badge-info plain" *ngIf="u.id === me">Tú</span></div>
+            <div class="sub">{{ u.username }} · {{ u.email }}</div>
+          </div>
+          <select class="select role" [ngModel]="u.role" (ngModelChange)="changeRole(u, $event)" [disabled]="u.id === me" aria-label="Rol">
+            <option value="admin">Administrador</option>
+            <option value="employee">Empleado</option>
+          </select>
+          <button class="btn btn-sm" type="button" (click)="toggle(u)" [disabled]="u.id === me">{{ u.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
+        </div>
+      </div>
+      <div class="empty" *ngIf="!loading && !users.length">
+        <app-icon name="users"></app-icon>
+        <p>No hay usuarios {{ status === 'active' ? 'activos' : 'inactivos' }}.</p>
+      </div>
+    </div>
+  </div>
+</ion-content>
+
+<ion-modal class="sheet sheet-small" [isOpen]="open" (didDismiss)="open = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ created ? 'Cuenta creada' : 'Nuevo usuario' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+
+      <ng-container *ngIf="!created">
+        <div class="modal-body stack">
+          <div class="field">
+            <label for="u-name">Nombre completo</label>
+            <input id="u-name" class="input" [(ngModel)]="form.name" maxlength="100" />
+          </div>
+          <div class="field">
+            <label for="u-user">Usuario</label>
+            <input id="u-user" class="input" [(ngModel)]="form.username" autocapitalize="off" maxlength="50" />
+          </div>
+          <div class="field">
+            <label for="u-mail">Correo</label>
+            <input id="u-mail" class="input" type="email" [(ngModel)]="form.email" maxlength="150" />
+          </div>
+          <div class="field">
+            <label>Rol</label>
+            <div class="segmented block">
+              <button type="button" [class.active]="form.role === 'employee'" (click)="form.role = 'employee'">Empleado</button>
+              <button type="button" [class.active]="form.role === 'admin'" (click)="form.role = 'admin'">Administrador</button>
+            </div>
+          </div>
+          <div class="form-error" *ngIf="formError">{{ formError }}</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" (click)="open = false">Cancelar</button>
+          <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Creando…' : 'Crear cuenta' }}</button>
+        </div>
+      </ng-container>
+
+      <ng-container *ngIf="created as c">
+        <div class="modal-body stack">
+          <div class="notice success"><app-icon name="check"></app-icon><div>Comparte estos datos con {{ c.name }}. Al entrar se le pedirá crear su propia contraseña.</div></div>
+          <div class="cred">
+            <span class="small muted">Usuario</span>
+            <strong>{{ c.username }}</strong>
+          </div>
+          <div class="cred">
+            <span class="small muted">Contraseña temporal</span>
+            <div class="row-between">
+              <strong class="mono">{{ c.temporary_password }}</strong>
+              <button class="btn btn-sm" type="button" (click)="copy(c.temporary_password)">Copiar</button>
+            </div>
+          </div>
+          <p class="small muted">Esta contraseña no se volverá a mostrar.</p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-primary" type="button" (click)="open = false">Listo</button>
+        </div>
+      </ng-container>
+    </div>
+  </ng-template>
+</ion-modal>

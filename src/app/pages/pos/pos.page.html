@@ -1,0 +1,202 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Punto de venta</ion-title>
+    <ion-buttons slot="end">
+      <a class="btn btn-sm" routerLink="/orders"><app-icon name="orders"></app-icon><span class="desktop-only">Pedidos</span></a>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="pos">
+    <!-- Menú -->
+    <section class="menu">
+      <div class="menu-tools">
+        <div class="search">
+          <app-icon name="search"></app-icon>
+          <input class="input" [(ngModel)]="query" placeholder="Buscar producto" />
+        </div>
+        <div class="cats">
+          <button type="button" [class.active]="!category" (click)="category = null">Todo</button>
+          <button type="button" *ngFor="let c of categories" [class.active]="category === c.id" (click)="category = c.id">{{ c.name }}</button>
+        </div>
+      </div>
+
+      <div class="tiles" *ngIf="!loading">
+        <button
+          type="button"
+          class="tile"
+          *ngFor="let p of visible"
+          (click)="add(p)"
+          [class.off]="!p.is_available"
+          [class.in-cart]="qtyInCart(p) > 0"
+        >
+          <div class="tile-photo">
+            <img *ngIf="imageUrl(p)" [apiSrc]="p.image_path" [alt]="p.name" (error)="p._imgError = true" />
+            <span *ngIf="!imageUrl(p)" class="initial">{{ p.name.charAt(0) }}</span>
+            <span class="qty-badge" *ngIf="qtyInCart(p) > 0">{{ qtyInCart(p) }}</span>
+          </div>
+          <div class="tile-info">
+            <span class="tile-name">{{ p.name }}</span>
+            <span class="tile-price num">{{ p.price | money }}</span>
+          </div>
+        </button>
+      </div>
+      <div class="tiles" *ngIf="loading">
+        <div class="tile skeleton-tile" *ngFor="let i of [1, 2, 3, 4, 5, 6]"></div>
+      </div>
+      <div class="empty" *ngIf="!loading && !visible.length">
+        <app-icon name="products"></app-icon>
+        <h3>Sin productos</h3>
+        <p>{{ query ? 'Prueba con otro nombre.' : 'Registra productos activos para venderlos aquí.' }}</p>
+      </div>
+    </section>
+
+    <!-- Ticket (tableta y computadora) -->
+    <aside class="ticket card">
+      <ng-container *ngTemplateOutlet="ticketTpl"></ng-container>
+    </aside>
+  </div>
+
+  <!-- Barra del pedido (teléfono) -->
+  <button type="button" class="cart-bar" *ngIf="count" (click)="cartOpen = true">
+    <span class="cart-count">{{ count }}</span>
+    <span class="grow">Ver pedido</span>
+    <strong class="num">{{ total | money }}</strong>
+  </button>
+</ion-content>
+
+<ng-template #ticketTpl>
+  <div class="ticket-head">
+    <h3>Pedido actual</h3>
+    <button class="link small" type="button" (click)="clear()" *ngIf="cart.length">Vaciar</button>
+  </div>
+  <div class="ticket-opts">
+    <div class="segmented block">
+      <button type="button" [class.active]="mode === 'local'" (click)="mode = 'local'"><app-icon name="dine"></app-icon>Comer aquí</button>
+      <button type="button" [class.active]="mode === 'takeaway'" (click)="mode = 'takeaway'"><app-icon name="takeaway"></app-icon>Para llevar</button>
+    </div>
+    <input class="input" [(ngModel)]="customer" placeholder="Nombre del cliente (opcional)" maxlength="80" />
+  </div>
+  <div class="ticket-lines">
+    <div class="tline" *ngFor="let l of cart">
+      <div class="grow">
+        <div class="tname">{{ l.product.name }}</div>
+        <div class="small muted num">{{ l.product.price | money }} c/u</div>
+      </div>
+      <div class="stepper">
+        <button type="button" (click)="change(l, -1)" aria-label="Menos"><app-icon name="minus"></app-icon></button>
+        <span class="num">{{ l.quantity }}</span>
+        <button type="button" (click)="change(l, 1)" aria-label="Más"><app-icon name="plus"></app-icon></button>
+      </div>
+      <div class="tsub num">{{ l.quantity * l.product.price | money }}</div>
+    </div>
+    <div class="empty small" *ngIf="!cart.length">
+      <app-icon name="pos"></app-icon>
+      <p>Toca un producto para agregarlo.</p>
+    </div>
+  </div>
+  <div class="ticket-foot">
+    <div class="row-between total">
+      <span>Total</span>
+      <strong class="num">{{ total | money }}</strong>
+    </div>
+    <button class="btn btn-primary btn-lg btn-block" type="button" (click)="openPay()" [disabled]="!cart.length">
+      Cobrar {{ count ? '(' + count + ')' : '' }}
+    </button>
+  </div>
+</ng-template>
+
+<!-- Ticket en teléfono -->
+<ion-modal class="sheet" [isOpen]="cartOpen" (didDismiss)="cartOpen = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Pedido</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="cartOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="ticket mobile-ticket">
+        <ng-container *ngTemplateOutlet="ticketTpl"></ng-container>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Cobro -->
+<ion-modal class="sheet sheet-small" [isOpen]="payOpen" (didDismiss)="payOpen = false; result = null" [backdropDismiss]="!paying">
+  <ng-template>
+    <div class="modal-shell">
+      <!-- Resultado -->
+      <ng-container *ngIf="result; else payForm">
+        <div class="modal-body done">
+          <div class="done-icon"><app-icon name="check"></app-icon></div>
+          <h2>Venta #{{ result.id }} registrada</h2>
+          <p class="muted">
+            {{ result.items }} producto(s){{ result.customer ? ' para ' + result.customer : '' }} ·
+            {{ result.payment_status === 'paid' ? 'cobrado' : 'por cobrar' }} ·
+            {{ result.delivery_status === 'delivered' ? 'entregado' : 'en preparación' }}
+          </p>
+          <div class="done-total num">{{ result.total | money }}</div>
+          <div class="change" *ngIf="result.change_amount !== null && result.change_amount !== undefined">
+            Cambio: <strong class="num">{{ result.change_amount | money }}</strong>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" type="button" (click)="goOrders()">Ver pedidos</button>
+          <button class="btn btn-primary" type="button" (click)="newSale()">Nueva venta</button>
+        </div>
+      </ng-container>
+
+      <ng-template #payForm>
+        <div class="modal-head">
+          <h2>Cobrar {{ total | money }}</h2>
+          <button class="btn btn-ghost btn-icon" type="button" (click)="payOpen = false" aria-label="Cerrar" [disabled]="paying"><app-icon name="close"></app-icon></button>
+        </div>
+        <div class="modal-body stack">
+          <div class="segmented block">
+            <button type="button" [class.active]="!payLater" (click)="payLater = false">Cobrar ahora</button>
+            <button type="button" [class.active]="payLater" (click)="payLater = true">Cobrar después</button>
+          </div>
+
+          <ng-container *ngIf="!payLater">
+            <div class="methods">
+              <button type="button" *ngFor="let m of methods" [class.active]="methodId === m.id" (click)="methodId = m.id">
+                <app-icon [name]="m.name.toLowerCase().trim() === 'efectivo' ? 'cash' : 'card'"></app-icon>{{ m.name }}
+              </button>
+            </div>
+
+            <div class="field" *ngIf="isCash">
+              <label for="cash">Efectivo recibido</label>
+              <div class="input-group">
+                <span class="addon">$</span>
+                <input id="cash" class="input cash-input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="cash" />
+              </div>
+              <div class="quick">
+                <button type="button" *ngFor="let v of quickCash; let i = index" (click)="cash = v">{{ i === 0 ? 'Exacto' : (v | money) }}</button>
+              </div>
+              <div class="change-box" *ngIf="changeDue !== null" [class.short]="changeDue < 0">
+                <span>{{ changeDue < 0 ? 'Faltan' : 'Cambio' }}</span>
+                <strong class="num">{{ (changeDue < 0 ? -changeDue : changeDue) | money }}</strong>
+              </div>
+            </div>
+          </ng-container>
+          <p class="small muted" *ngIf="payLater">El pedido queda en Pedidos como "por cobrar".</p>
+
+          <label class="check">
+            <input type="checkbox" [(ngModel)]="deliverNow" />
+            Entregar de inmediato
+          </label>
+          <span class="small muted hint">
+            {{ deliverNow ? 'Se marca como entregado y se descuenta del inventario ahora.' : 'Queda en Pedidos para prepararlo; al entregarlo se descuenta del inventario.' }}
+          </span>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-primary btn-lg btn-block" type="button" (click)="checkout()" [disabled]="paying">
+            {{ paying ? 'Registrando…' : payLater ? 'Enviar pedido' : 'Cobrar ' + (total | money) }}
+          </button>
+        </div>
+      </ng-template>
+    </div>
+  </ng-template>
+</ion-modal>

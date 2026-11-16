@@ -1,0 +1,102 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Insumos</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nuevo insumo</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Insumos</h1>
+        <p>Todo lo que utilizas: carne, pan, queso, aderezos, desechables. Aquí defines la unidad con la que lo usas; cómo lo compras y su precio se capturan en Compras.</p>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search grow">
+        <app-icon name="search"></app-icon>
+        <input class="input" [(ngModel)]="query" placeholder="Buscar insumo" />
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="filter === 'active'" (click)="filter = 'active'">Activos {{ count('active') }}</button>
+        <button type="button" [class.active]="filter === 'inactive'" (click)="filter = 'inactive'">Inactivos {{ count('inactive') }}</button>
+        <button type="button" [class.active]="filter === 'all'" (click)="filter = 'all'">Todos</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3, 4]"></div>
+      </ng-container>
+
+      <div class="table-wrap" *ngIf="!loading && visible.length">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Insumo</th>
+              <th class="num">Existencia</th>
+              <th class="num">Costo actual</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="clickable" *ngFor="let i of visible" (click)="openEdit(i)">
+              <td>
+                <div class="strong">{{ i.name }}</div>
+                <div class="small muted">Se usa por {{ i.unit }}</div>
+              </td>
+              <td class="num">
+                <span [class.text-danger]="i.level === 'out'" [class.text-warning]="i.level === 'low'">{{ i.stock | qty }}</span>
+                <span class="muted small"> {{ i.unit }}</span>
+              </td>
+              <td class="num">
+                <span *ngIf="i.unit_cost !== null">{{ i.unit_cost | money }}<span class="muted small"> / {{ i.unit }}</span></span>
+                <span *ngIf="i.unit_cost === null" class="badge badge-warning">Sin compras</span>
+              </td>
+              <td class="right">
+                <span class="badge" *ngIf="i.status !== 'active'">Inactivo</span>
+                <app-icon name="chevron" class="faint"></app-icon>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="empty" *ngIf="!loading && !visible.length">
+        <app-icon name="inputs"></app-icon>
+        <h3>{{ query ? 'Sin resultados' : 'Aún no hay insumos' }}</h3>
+        <p>{{ query ? 'Prueba con otro nombre.' : 'Empieza registrando lo que usas para preparar tus productos.' }}</p>
+        <button class="btn btn-primary btn-sm" type="button" (click)="openNew()" *ngIf="!query">Registrar insumo</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Insumo</button>
+</ion-content>
+
+<ion-modal class="sheet" [isOpen]="modalOpen" (didDismiss)="modalOpen = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ editing ? 'Editar insumo' : 'Nuevo insumo' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="modalOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <app-input-form [value]="editing"></app-input-form>
+        <div class="danger-zone" *ngIf="editing">
+          <button class="btn btn-sm" type="button" (click)="toggle(editing)">{{ editing.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
+          <button class="btn btn-sm btn-danger-ghost" type="button" (click)="remove(editing)"><app-icon name="trash"></app-icon>Eliminar</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="modalOpen = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

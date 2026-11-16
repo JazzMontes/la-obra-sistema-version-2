@@ -1,0 +1,191 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Pedidos</ion-title>
+    <ion-buttons slot="end">
+      <a class="btn btn-primary btn-sm" routerLink="/pos"><app-icon name="plus"></app-icon>Nueva venta</a>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Pedidos</h1>
+        <p>Da seguimiento a lo que está en preparación. Al marcar un pedido como entregado se descuenta del inventario.</p>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="tab === 'active'" (click)="tab = 'active'">En curso {{ active.length || '' }}</button>
+        <button type="button" [class.active]="tab === 'history'" (click)="tab = 'history'">Historial</button>
+      </div>
+    </div>
+
+    <!-- En curso -->
+    <ng-container *ngIf="tab === 'active'">
+      <div class="board" *ngIf="active.length">
+        <article class="card order" *ngFor="let o of active" [class.late]="minutes(o) >= 20 && o.delivery_status === 'pending'">
+          <div class="order-head">
+            <div>
+              <div class="order-id">#{{ o.id }}<span *ngIf="o.customer_name"> · {{ o.customer_name }}</span></div>
+              <div class="small muted">
+                <app-icon [name]="o.delivery_mode === 'takeaway' ? 'takeaway' : 'dine'"></app-icon>
+                {{ o.delivery_mode === 'takeaway' ? 'Para llevar' : 'Comer aquí' }} · {{ elapsed(o) }}
+              </div>
+            </div>
+            <span class="badge" [class]="'badge ' + status(o).cls">{{ status(o).label }}</span>
+          </div>
+          <ul class="items">
+            <li *ngFor="let i of o.items"><strong>{{ i.quantity }}×</strong> {{ i.name }}</li>
+          </ul>
+          <div class="order-foot">
+            <strong class="num">{{ o.total | money }}</strong>
+            <div class="row">
+              <button class="btn btn-sm btn-ghost" type="button" *ngIf="o.payment_status === 'pending'" (click)="cancel(o)" [disabled]="busy.has(o.id)">Cancelar</button>
+              <button class="btn btn-sm" type="button" *ngIf="o.payment_status === 'pending'" (click)="openPay(o)" [disabled]="busy.has(o.id)">
+                <app-icon name="cash"></app-icon>Cobrar
+              </button>
+              <button class="btn btn-sm btn-dark" type="button" *ngIf="o.delivery_status === 'pending'" (click)="deliver(o)" [disabled]="busy.has(o.id)">
+                <app-icon name="check"></app-icon>Entregar
+              </button>
+            </div>
+          </div>
+        </article>
+      </div>
+      <div class="card empty" *ngIf="!loading && !active.length">
+        <app-icon name="check"></app-icon>
+        <h3>No hay pedidos pendientes</h3>
+        <p>Los pedidos que se cobren sin entregar, o que queden por cobrar, aparecerán aquí.</p>
+        <a class="btn btn-primary btn-sm" routerLink="/pos">Nueva venta</a>
+      </div>
+      <p class="small muted refresh-note" *ngIf="active.length">Se actualiza cada 20 segundos.</p>
+    </ng-container>
+
+    <!-- Historial -->
+    <ng-container *ngIf="tab === 'history'">
+      <div class="card card-pad history-tools">
+        <div class="field">
+          <label for="h-date">Fecha</label>
+          <input id="h-date" class="input" type="date" [(ngModel)]="date" (change)="changeDate()" [disabled]="!isAdmin" />
+        </div>
+        <div class="period-total">
+          <span class="small muted">Cobrado</span>
+          <strong class="num">{{ historyTotal | money }}</strong>
+        </div>
+      </div>
+      <p class="small muted" *ngIf="!isAdmin">Ves tus ventas de hoy.</p>
+      <div class="card">
+        <div class="list" *ngIf="history.length">
+          <div class="list-row clickable" *ngFor="let s of history" (click)="openDetail(s)">
+            <div class="grow">
+              <div class="title">#{{ s.id }}<span *ngIf="s.customer_name"> · {{ s.customer_name }}</span></div>
+              <div class="sub">{{ s.created_at | dateMx: 'time' }} · {{ s.user_name }}<span *ngIf="s.payment_method"> · {{ s.payment_method }}</span></div>
+            </div>
+            <span [class]="'badge ' + status(s).cls">{{ status(s).label }}</span>
+            <div class="end strong num" [class.strike]="s.order_status === 'cancelled'">{{ s.total | money }}</div>
+          </div>
+        </div>
+        <div class="empty" *ngIf="!history.length">
+          <app-icon name="history"></app-icon>
+          <p>No hay ventas en esta fecha.</p>
+        </div>
+      </div>
+    </ng-container>
+  </div>
+</ion-content>
+
+<!-- Cobrar pedido pendiente -->
+<ion-modal class="sheet sheet-small" [isOpen]="!!paying" (didDismiss)="paying = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="paying as p">
+      <div class="modal-head">
+        <h2>Cobrar pedido #{{ p.id }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="paying = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="pay-total num">{{ p.total | money }}</div>
+        <div class="methods">
+          <button type="button" *ngFor="let m of methods" [class.active]="methodId === m.id" (click)="methodId = m.id">{{ m.name }}</button>
+        </div>
+        <div class="field" *ngIf="isCash">
+          <label for="o-cash">Efectivo recibido</label>
+          <div class="input-group">
+            <span class="addon">$</span>
+            <input id="o-cash" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="cash" />
+          </div>
+          <span class="small" *ngIf="changeDue !== null" [class.text-danger]="changeDue < 0" [class.text-success]="changeDue >= 0">
+            {{ changeDue < 0 ? 'Faltan' : 'Cambio' }}: {{ (changeDue < 0 ? -changeDue : changeDue) | money }}
+          </span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="paying = null">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="pay()" [disabled]="savingPay">{{ savingPay ? 'Cobrando…' : 'Cobrar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Detalle de venta -->
+<ion-modal class="sheet sheet-small" [isOpen]="!!detail" (didDismiss)="detail = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="detail as d">
+      <div class="modal-head">
+        <h2>Venta #{{ d.id }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="detail = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <div class="row wrap detail-meta">
+          <span [class]="'badge ' + status(d).cls">{{ status(d).label }}</span>
+          <span class="small muted">{{ d.created_at | dateMx: 'datetime' }} · {{ d.user_name }}</span>
+        </div>
+        <div class="list-row" *ngFor="let i of d.items">
+          <div class="grow">
+            <div class="title">{{ i.quantity }}× {{ i.name }}</div>
+            <div class="sub">{{ i.unit_price | money }} c/u</div>
+          </div>
+          <div class="end num strong">{{ i.subtotal | money }}</div>
+        </div>
+        <div class="row-between total-line">
+          <span>Total{{ d.payment_method ? ' · ' + d.payment_method : '' }}</span>
+          <strong class="num">{{ d.total | money }}</strong>
+        </div>
+
+        <!-- Factura de prueba -->
+        <div class="invoice" *ngIf="canInvoice(d)">
+          <div class="invoice-head">
+            <app-icon name="receipt"></app-icon>
+            <div class="grow">
+              <strong>Factura electrónica (prueba)</strong>
+              <div class="small muted">CFDI 4.0 timbrado en el ambiente de pruebas de Profact. No tiene validez fiscal.</div>
+            </div>
+          </div>
+          <p class="small muted" *ngIf="invoiceLoading">Consultando…</p>
+          <ng-container *ngIf="!invoiceLoading">
+            <div *ngIf="invoice as inv" class="invoice-ok">
+              <span class="badge badge-success">Timbrada</span>
+              <div class="small">Folio fiscal (UUID)</div>
+              <code class="uuid">{{ inv.uuid }}</code>
+              <button class="btn btn-sm" type="button" (click)="downloadXml()"><app-icon name="arrowDown"></app-icon>Descargar XML</button>
+            </div>
+            <div class="field card-type" *ngIf="!invoice && needsCardType(d)">
+              <label>Para la factura, ¿la tarjeta fue de crédito o débito?</label>
+              <div class="segmented">
+                <button type="button" [class.active]="cardType === 'credit'" (click)="cardType = 'credit'; invoiceError = ''">Crédito</button>
+                <button type="button" [class.active]="cardType === 'debit'" (click)="cardType = 'debit'; invoiceError = ''">Débito</button>
+              </div>
+              <span class="small muted">Solo se usa en el CFDI; el SAT pide el código de forma de pago (04 crédito, 28 débito).</span>
+            </div>
+            <button class="btn btn-dark btn-sm" type="button" *ngIf="!invoice" (click)="stampInvoice()" [disabled]="invoiceBusy">
+              {{ invoiceBusy ? 'Timbrando…' : 'Timbrar factura de prueba' }}
+            </button>
+          </ng-container>
+          <div class="form-error small" *ngIf="invoiceError">{{ invoiceError }}</div>
+        </div>
+      </div>
+      <div class="modal-foot" *ngIf="isAdmin && d.order_status === 'confirmed' && d.payment_status === 'paid'">
+        <button class="btn btn-danger-ghost" type="button" (click)="cancelSale(d)">Cancelar venta</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

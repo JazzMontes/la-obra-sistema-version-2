@@ -1,0 +1,95 @@
+.kpi-link {
+  color: inherit;
+
+  &:hover {
+    border-color: var(--border-strong);
+  }
+}
+
+.sort {
+  width: auto;
+  height: 36px;
+  font-size: 13.5px;
+}
+
+.margin-cell {
+  min-width: 150px;
+}
+
+.margin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .bar {
+    flex: 1;
+    height: 8px;
+    border-radius: 99px;
+    background: var(--surface-3);
+    overflow: hidden;
+
+    span {
+      display: block;
+      height: 100%;
+      border-radius: 99px;
+      background: var(--success);
+    }
+  }
+
+  strong {
+    width: 52px;
+    text-align: right;
+    font-size: 13.5px;
+  }
+
+  &.mid .bar span {
+    background: var(--warning);
+  }
+
+  &.bad .bar span {
+    background: var(--danger);
+  }
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.summary-box {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+  margin-bottom: 14px;
+
+  @media (min-width: 520px) {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  div {
+    display: flex;
+    flex-direction: column;
+  }
+
+  span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  strong {
+    font-size: 18px;
+  }
+}
+
+.share {
+  margin-top: 6px;
+  max-width: 220px;
+
+  span {
+    background: var(--brand);
+  }
+}

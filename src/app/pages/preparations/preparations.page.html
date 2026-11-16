@@ -1,0 +1,140 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Preparaciones</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nueva preparación</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Preparaciones</h1>
+        <p>Lo que produces con tus insumos antes de venderlo, como la carne preparada para hamburguesa. Indica los ingredientes y cuánto rinde para conocer el costo de cada porción.</p>
+      </div>
+    </div>
+
+    <div class="search toolbar">
+      <app-icon name="search"></app-icon>
+      <input class="input" [(ngModel)]="query" placeholder="Buscar preparación" />
+    </div>
+
+    <ng-container *ngIf="loading">
+      <div class="card"><div class="skeleton" *ngFor="let i of [1, 2, 3]"></div></div>
+    </ng-container>
+
+    <div class="cards" *ngIf="!loading && visible.length">
+      <button type="button" class="card prep" *ngFor="let p of visible" (click)="openEdit(p)">
+        <div class="row-between">
+          <h3>{{ p.name }}</h3>
+          <span class="badge badge-warning" *ngIf="p.missing_prices?.length">Faltan precios</span>
+        </div>
+        <p class="small muted desc" *ngIf="p.description">{{ p.description }}</p>
+        <div class="chips">
+          <span class="chip" *ngFor="let i of p.inputs">{{ i.name }}</span>
+        </div>
+        <div class="prep-foot">
+          <div>
+            <span class="small muted">Rinde</span>
+            <strong>{{ p.yield_quantity | qty }} {{ unitLabel(p.yield_unit, p.yield_quantity) }}<span *ngIf="p.yield_estimated" class="muted"> aprox.</span></strong>
+          </div>
+          <div class="right">
+            <span class="small muted">Costo por {{ unitLabel(p.yield_unit) }}</span>
+            <strong class="num">{{ p.unit_cost | money }}</strong>
+          </div>
+        </div>
+      </button>
+    </div>
+
+    <div class="card empty" *ngIf="!loading && !visible.length">
+      <app-icon name="preparations"></app-icon>
+      <h3>{{ query ? 'Sin resultados' : 'Aún no hay preparaciones' }}</h3>
+      <p>Las preparaciones son opcionales: úsalas para lo que cocinas por lotes y luego repartes en porciones.</p>
+      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()" *ngIf="!query">Nueva preparación</button>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Preparación</button>
+</ion-content>
+
+<ion-modal class="sheet sheet-wide" [isOpen]="formOpen" (didDismiss)="formOpen = false" [backdropDismiss]="false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ editingId ? 'Editar preparación' : 'Nueva preparación' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="formOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-2">
+          <div class="field">
+            <label for="pr-name">Nombre</label>
+            <input id="pr-name" class="input" [(ngModel)]="form.name" placeholder="Ej. Carne para hamburguesa" maxlength="120" />
+          </div>
+          <div class="field">
+            <label for="pr-desc">Descripción (opcional)</label>
+            <input id="pr-desc" class="input" [(ngModel)]="form.description" placeholder="Ej. sazonada, en bolitas de 120 g" maxlength="255" />
+          </div>
+        </div>
+
+        <div class="section-title"><h2>Ingredientes del lote</h2></div>
+        <div class="card">
+          <div class="ing" *ngFor="let g of ingredients; let i = index">
+            <select class="select" [(ngModel)]="g.input_id" [attr.aria-label]="'Ingrediente ' + (i + 1)">
+              <option [ngValue]="null" disabled>Insumo</option>
+              <option *ngFor="let inp of inputs" [ngValue]="inp.id">{{ inp.name }}</option>
+            </select>
+            <div class="input-group">
+              <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="g.quantity" placeholder="0" aria-label="Cantidad" />
+              <span class="addon">{{ input(g.input_id)?.unit || '—' }}</span>
+            </div>
+            <span class="num cost">{{ ingredientCost(g) | money }}</span>
+            <button class="btn btn-ghost btn-icon" type="button" (click)="removeIngredient(i)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
+          </div>
+          <div class="card-foot">
+            <button class="link small" type="button" (click)="addIngredient()">+ Agregar ingrediente</button>
+          </div>
+        </div>
+
+        <div class="section-title"><h2>Rendimiento</h2></div>
+        <div class="yield">
+          <div class="field">
+            <label for="pr-y">Con este lote obtienes</label>
+            <div class="input-group">
+              <input id="pr-y" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="form.yield_quantity" />
+              <select class="select addon-select" [(ngModel)]="form.yield_unit" aria-label="Unidad de rendimiento">
+                <option *ngFor="let k of yieldKeys" [value]="k">{{ unitLabel(k, 2) }}</option>
+              </select>
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" [(ngModel)]="form.yield_estimated" />Es aproximado</label>
+        </div>
+
+        <div class="cost-box">
+          <div>
+            <span class="small muted">Costo del lote</span>
+            <strong class="num">{{ batchCost | money }}</strong>
+          </div>
+          <div>
+            <span class="small muted">Costo por {{ unitLabel(form.yield_unit) }}</span>
+            <strong class="num big">{{ unitCost | money }}</strong>
+          </div>
+        </div>
+        <div class="notice warning" *ngIf="missingPrices.length">
+          <app-icon name="alert"></app-icon>
+          <div>Aún no hay compras de: {{ missingPrices.join(', ') }}. El costo se calculará cuando registres su compra.</div>
+        </div>
+
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger-ghost" type="button" *ngIf="editingId" (click)="remove()"><app-icon name="trash"></app-icon>Eliminar</button>
+        <span class="grow"></span>
+        <button class="btn" type="button" (click)="formOpen = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

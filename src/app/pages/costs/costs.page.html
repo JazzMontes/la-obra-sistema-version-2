@@ -1,0 +1,146 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Costos</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Costos por producto</h1>
+        <p>Se calculan solos: cantidades de cada receta × precio de la última compra de cada insumo. Compáralos con el precio de venta.</p>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="mode === 'local'" (click)="setMode('local')">Comer aquí</button>
+        <button type="button" [class.active]="mode === 'takeaway'" (click)="setMode('takeaway')">Para llevar</button>
+      </div>
+    </div>
+
+    <div class="grid-3" *ngIf="summary">
+      <div class="card kpi">
+        <div class="kpi-label">Margen promedio</div>
+        <div class="kpi-value">{{ summary.average_margin === null ? '—' : (summary.average_margin | qty: 1) + '%' }}</div>
+        <div class="kpi-note">De los productos con costo completo</div>
+      </div>
+      <a class="card kpi kpi-link" routerLink="/products">
+        <div class="kpi-label">Sin receta</div>
+        <div class="kpi-value">{{ summary.without_recipe }}</div>
+        <div class="kpi-note">Defínela en Productos</div>
+      </a>
+      <a class="card kpi kpi-link" routerLink="/purchases">
+        <div class="kpi-label">Con precios faltantes</div>
+        <div class="kpi-value">{{ summary.missing_prices }}</div>
+        <div class="kpi-note">Registra la compra de sus insumos</div>
+      </a>
+    </div>
+
+    <div class="section-title">
+      <h2>{{ products.length }} productos</h2>
+      <select class="select sort" [(ngModel)]="sort" aria-label="Ordenar">
+        <option value="margin">Menor margen primero</option>
+        <option value="cost">Mayor costo primero</option>
+        <option value="name">Por nombre</option>
+      </select>
+    </div>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3, 4]"></div>
+      </ng-container>
+      <div class="table-wrap" *ngIf="!loading && products.length">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th class="num">Precio</th>
+              <th class="num">Costo</th>
+              <th class="num">Utilidad</th>
+              <th>Margen</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="clickable" *ngFor="let p of sorted" (click)="detail = p">
+              <td>
+                <div class="row">
+                  <div class="avatar avatar-sm">
+                    <img *ngIf="p.image_path" [apiSrc]="p.image_path" alt="" />
+                    <span *ngIf="!p.image_path">{{ p.name.charAt(0) }}</span>
+                  </div>
+                  <div>
+                    <div class="strong">{{ p.name }}</div>
+                    <div class="small muted">{{ p.category_name }}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="num">{{ p.sale_price | money }}</td>
+              <td class="num">
+                <span *ngIf="p.complete">{{ p.standard_cost | money }}</span>
+                <span *ngIf="!p.has_recipe" class="badge plain">Sin receta</span>
+                <span *ngIf="p.has_recipe && !p.complete" class="badge badge-warning plain">Faltan precios</span>
+              </td>
+              <td class="num">{{ p.gross_profit | money }}</td>
+              <td class="margin-cell">
+                <div class="margin" *ngIf="p.gross_margin !== null" [class]="'margin ' + level(p.gross_margin)">
+                  <div class="bar"><span [style.width.%]="p.gross_margin > 0 ? p.gross_margin : 0"></span></div>
+                  <strong class="num">{{ p.gross_margin | qty: 1 }}%</strong>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="empty" *ngIf="!loading && !products.length">
+        <app-icon name="costs"></app-icon>
+        <h3>No hay productos activos</h3>
+        <p>Registra productos y sus recetas para ver aquí su costo.</p>
+      </div>
+    </div>
+  </div>
+</ion-content>
+
+<ion-modal class="sheet" [isOpen]="!!detail" (didDismiss)="detail = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="detail as d">
+      <div class="modal-head">
+        <h2>{{ d.name }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="detail = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <div class="summary-box">
+          <div><span>Precio</span><strong class="num">{{ d.sale_price | money }}</strong></div>
+          <div><span>Costo</span><strong class="num">{{ d.standard_cost | money }}</strong></div>
+          <div><span>Utilidad</span><strong class="num">{{ d.gross_profit | money }}</strong></div>
+          <div><span>Margen</span><strong class="num">{{ d.gross_margin === null ? '—' : (d.gross_margin | qty: 1) + '%' }}</strong></div>
+        </div>
+
+        <div class="notice warning" *ngIf="d.missing_prices.length">
+          <app-icon name="alert"></app-icon>
+          <div>Sin precio de compra: {{ d.missing_prices.join(', ') }}.</div>
+        </div>
+
+        <div class="section-title"><h2>Composición ({{ mode === 'local' ? 'comer aquí' : 'para llevar' }})</h2></div>
+        <div class="card" *ngIf="d.components.length; else noRecipe">
+          <div class="list-row" *ngFor="let c of d.components">
+            <div class="grow">
+              <div class="title">{{ c.name }} <span class="badge plain" *ngIf="c.type === 'preparation'">Preparación</span></div>
+              <div class="sub">{{ c.quantity | qty }} {{ c.unit }} × {{ c.unit_cost | money }}<span *ngIf="c.estimated"> · aprox.</span></div>
+              <div class="meter share"><span [style.width.%]="share(c, d.standard_cost)"></span></div>
+            </div>
+            <div class="end">
+              <div class="strong num">{{ c.cost | money }}</div>
+              <div class="small muted" *ngIf="d.standard_cost">{{ share(c, d.standard_cost) }}%</div>
+            </div>
+          </div>
+        </div>
+        <ng-template #noRecipe>
+          <div class="card empty">
+            <p>Este producto no tiene receta.</p>
+            <a class="btn btn-sm" routerLink="/products" (click)="detail = null">Ir a Productos</a>
+          </div>
+        </ng-template>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

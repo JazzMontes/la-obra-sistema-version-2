@@ -1,0 +1,129 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Gastos</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Registrar gasto</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Gastos y salidas</h1>
+        <p>Salidas de caja que no son compras de insumos: gas, limpieza, hielo, transporte. Se restan en el corte del día.</p>
+      </div>
+    </div>
+
+    <div class="card card-pad filters">
+      <ng-container *ngIf="isAdmin">
+        <div class="field">
+          <label for="e-from">Desde</label>
+          <input id="e-from" class="input" type="date" [(ngModel)]="from" (change)="load()" />
+        </div>
+        <div class="field">
+          <label for="e-to">Hasta</label>
+          <input id="e-to" class="input" type="date" [(ngModel)]="to" (change)="load()" />
+        </div>
+      </ng-container>
+      <span class="small muted" *ngIf="!isAdmin">Tus gastos de hoy</span>
+      <div class="period-total">
+        <span class="small muted">Total</span>
+        <strong class="num">{{ total | money }}</strong>
+      </div>
+    </div>
+    <label class="check small toggle"><input type="checkbox" [(ngModel)]="showCancelled" />Mostrar cancelados</label>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+      <div class="list" *ngIf="!loading && visible.length">
+        <div class="list-row" *ngFor="let e of visible" [class.clickable]="e.status === 'active'" (click)="openEdit(e)">
+          <div class="avatar avatar-sm"><app-icon name="expenses"></app-icon></div>
+          <div class="grow">
+            <div class="title" [class.strike]="e.status !== 'active'">{{ e.reason }}</div>
+            <div class="sub">
+              {{ e.created_at | dateMx: 'datetime' }} · {{ e.user_name }}
+              <span *ngIf="e.status !== 'active'"> · cancelado: {{ e.cancellation_reason }}</span>
+            </div>
+          </div>
+          <div class="end strong num" [class.strike]="e.status !== 'active'">{{ e.amount | money }}</div>
+        </div>
+      </div>
+      <div class="empty" *ngIf="!loading && !visible.length">
+        <app-icon name="expenses"></app-icon>
+        <h3>Sin gastos</h3>
+        <p>Registra aquí cualquier salida de dinero de la caja.</p>
+        <button class="btn btn-primary btn-sm" type="button" (click)="openNew()">Registrar gasto</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Gasto</button>
+</ion-content>
+
+<ion-modal class="sheet sheet-small" [isOpen]="open" (didDismiss)="open = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ editing ? 'Editar gasto' : 'Registrar gasto' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="field">
+          <label for="x-amount">Monto</label>
+          <div class="input-group">
+            <span class="addon">$</span>
+            <input id="x-amount" class="input big-input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="form.amount" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="x-reason">Concepto</label>
+          <input id="x-reason" class="input" [(ngModel)]="form.reason" placeholder="Ej. Tanque de gas" maxlength="255" />
+          <div class="chips">
+            <button type="button" *ngFor="let s of suggestions" (click)="form.reason = s">{{ s }}</button>
+          </div>
+        </div>
+        <div class="field" *ngIf="editing">
+          <label for="x-change">Motivo del cambio</label>
+          <input id="x-change" class="input" [(ngModel)]="form.change_reason" placeholder="Opcional" maxlength="255" />
+        </div>
+        <div *ngIf="history?.length">
+          <div class="label small strong">Historial de cambios</div>
+          <div class="small muted" *ngFor="let h of history">{{ h.changed_at | dateMx: 'datetime' }} · {{ h.changed_by_name }}<span *ngIf="h.change_reason"> · {{ h.change_reason }}</span></div>
+        </div>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger-ghost" type="button" *ngIf="editing" (click)="askCancel()">Cancelar gasto</button>
+        <span class="grow"></span>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<ion-modal class="sheet sheet-small" [isOpen]="!!cancelling" (didDismiss)="cancelling = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="cancelling as c">
+      <div class="modal-head">
+        <h2>Cancelar gasto</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="cancelling = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <p class="muted">"{{ c.reason }}" por {{ c.amount | money }}. Queda registrado como cancelado.</p>
+        <div class="field">
+          <label for="x-cancel">Motivo</label>
+          <input id="x-cancel" class="input" [(ngModel)]="cancelReason" placeholder="Ej. se registró dos veces" maxlength="255" />
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="cancelling = null">Volver</button>
+        <button class="btn btn-danger" type="button" (click)="confirmCancel()">Cancelar gasto</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

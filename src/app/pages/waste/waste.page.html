@@ -1,0 +1,138 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Mermas</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Registrar merma</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Mermas y pérdidas</h1>
+        <p>Lo que se caduca, se cae o se desperdicia. Se descuenta del inventario y se valúa con el costo actual.</p>
+      </div>
+    </div>
+
+    <div class="card card-pad filters" *ngIf="isAdmin">
+      <div class="field">
+        <label for="w-from">Desde</label>
+        <input id="w-from" class="input" type="date" [(ngModel)]="from" (change)="load()" />
+      </div>
+      <div class="field">
+        <label for="w-to">Hasta</label>
+        <input id="w-to" class="input" type="date" [(ngModel)]="to" (change)="load()" />
+      </div>
+      <div class="period-total">
+        <span class="small muted">Pérdida estimada</span>
+        <strong class="num">{{ totalCost | money }}</strong>
+        <span class="small muted">{{ records.length }} registros</span>
+      </div>
+    </div>
+    <p class="small muted" *ngIf="!isAdmin">Ves las mermas que registraste hoy.</p>
+
+    <div class="layout">
+      <div class="card">
+        <ng-container *ngIf="loading">
+          <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+        </ng-container>
+        <div class="list" *ngIf="!loading && records.length">
+          <div class="list-row" *ngFor="let r of records">
+            <div class="avatar avatar-sm"><app-icon name="waste"></app-icon></div>
+            <div class="grow">
+              <div class="title">{{ r.affected_name }} <span class="muted small">· {{ kindLabel(r.affected_type) }}</span></div>
+              <div class="sub">
+                {{ r.quantity | qty }} {{ r.affected_unit || '' }}<span *ngIf="r.is_approximate == 1"> aprox.</span> ·
+                {{ r.classification }} · {{ r.waste_date | dateMx: 'short' }} · {{ r.user_name }}
+              </div>
+              <div class="sub reason">{{ r.reason }}</div>
+            </div>
+            <div class="end num strong">
+              <span *ngIf="r.cost_status === 'calculated'">{{ r.estimated_total_cost | money }}</span>
+              <span *ngIf="r.cost_status !== 'calculated'" class="badge plain">Sin costo</span>
+            </div>
+          </div>
+        </div>
+        <div class="empty" *ngIf="!loading && !records.length">
+          <app-icon name="check"></app-icon>
+          <h3>Sin mermas en este periodo</h3>
+          <p>Registra lo que se pierda para que el inventario cuadre.</p>
+          <button class="btn btn-primary btn-sm" type="button" (click)="openNew()">Registrar merma</button>
+        </div>
+      </div>
+
+      <div class="card" *ngIf="byClass.length">
+        <div class="card-head"><h3>Por motivo</h3></div>
+        <div class="card-pad">
+          <div class="hbar" *ngFor="let c of byClass">
+            <span>{{ c.name }}</span>
+            <div class="bar"><span [style.width.%]="(c.cost / maxClass) * 100"></span></div>
+            <span class="num strong">{{ c.cost | money }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Merma</button>
+</ion-content>
+
+<ion-modal class="sheet" [isOpen]="open" (didDismiss)="open = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Registrar merma</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="field">
+          <label>¿Qué se perdió?</label>
+          <div class="segmented block">
+            <button type="button" *ngFor="let k of kinds" [class.active]="form.affected_type === k.key" (click)="setKind(k.key)">{{ k.label }}</button>
+          </div>
+          <select class="select" [(ngModel)]="form.affected_id" aria-label="Elemento">
+            <option [ngValue]="null" disabled>Selecciona…</option>
+            <option *ngFor="let o of options" [ngValue]="o.id">{{ o.name }}</option>
+          </select>
+          <span class="hint" *ngIf="form.affected_type !== 'input'">Se descuentan del inventario los insumos que lleva, según su receta.</span>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="w-q">Cantidad</label>
+            <div class="input-group">
+              <input id="w-q" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="form.quantity" />
+              <span class="addon">{{ unit || '—' }}</span>
+            </div>
+            <label class="check small"><input type="checkbox" [(ngModel)]="form.is_approximate" />Es aproximada</label>
+          </div>
+          <div class="field">
+            <label for="w-d">Fecha</label>
+            <input id="w-d" class="input" type="date" [(ngModel)]="form.waste_date" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Motivo</label>
+          <div class="chips">
+            <button type="button" *ngFor="let c of classifications" [class.active]="form.classification === c" (click)="form.classification = c">{{ c }}</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="w-r">¿Qué pasó?</label>
+          <textarea id="w-r" class="textarea" [(ngModel)]="form.reason" placeholder="Ej. el paquete se quedó fuera del refrigerador" maxlength="500"></textarea>
+        </div>
+        <div class="notice" *ngIf="estimate !== null">
+          <app-icon name="info"></app-icon>
+          <div>Pérdida estimada: <strong>{{ estimate | money }}</strong></div>
+        </div>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="open = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Registrar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

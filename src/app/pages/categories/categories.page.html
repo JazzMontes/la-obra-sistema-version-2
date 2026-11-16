@@ -1,0 +1,50 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Categorías</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Categorías</h1>
+        <p>Agrupan tus productos en el menú y en el punto de venta.</p>
+      </div>
+    </div>
+
+    <form class="card card-pad add" (ngSubmit)="add()">
+      <input class="input" name="newName" [(ngModel)]="newName" placeholder="Nueva categoría, ej. Bebidas" maxlength="100" />
+      <button class="btn btn-primary" type="submit" [disabled]="!newName.trim() || busy"><app-icon name="plus"></app-icon>Agregar</button>
+    </form>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+      <div class="list" *ngIf="!loading && list.length">
+        <div class="list-row" *ngFor="let c of list">
+          <ng-container *ngIf="editingId !== c.id">
+            <div class="grow">
+              <div class="title" [class.faint]="c.status !== 'active'">{{ c.name }}</div>
+            </div>
+            <span class="badge" *ngIf="c.status !== 'active'">Inactiva</span>
+            <button class="btn btn-ghost btn-icon" type="button" (click)="startEdit(c)" aria-label="Renombrar"><app-icon name="edit"></app-icon></button>
+            <button class="btn btn-sm" type="button" (click)="toggle(c)">{{ c.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
+            <button class="btn btn-danger-ghost btn-icon" type="button" (click)="remove(c)" aria-label="Eliminar"><app-icon name="trash"></app-icon></button>
+          </ng-container>
+          <ng-container *ngIf="editingId === c.id">
+            <input class="input grow" [(ngModel)]="editName" (keyup.enter)="saveEdit(c)" maxlength="100" aria-label="Nombre" />
+            <button class="btn btn-sm" type="button" (click)="editingId = null">Cancelar</button>
+            <button class="btn btn-sm btn-dark" type="button" (click)="saveEdit(c)">Guardar</button>
+          </ng-container>
+        </div>
+      </div>
+      <div class="empty" *ngIf="!loading && !list.length">
+        <app-icon name="categories"></app-icon>
+        <p>Agrega tu primera categoría.</p>
+      </div>
+    </div>
+  </div>
+</ion-content>

@@ -1,0 +1,72 @@
+.toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 14px 0 12px;
+
+  .search {
+    min-width: 220px;
+  }
+}
+
+.kpi-btn {
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+
+  &.warning {
+    background: var(--warning);
+  }
+
+  &.danger {
+    background: var(--danger);
+  }
+}
+
+.meter {
+  margin: 8px 0 6px;
+}
+
+.sub-row .sub {
+  margin: 0;
+}
+
+.stock-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+
+  .big {
+    font-size: 30px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+
+    span {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+  }
+}
+
+.list-row .avatar app-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}

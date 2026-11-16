@@ -1,0 +1,271 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Compras</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Registrar compra</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Compras</h1>
+        <p>Lo que compras entra al inventario y su precio actualiza el costo de tus recetas automáticamente.</p>
+      </div>
+    </div>
+
+    <div class="filters card card-pad">
+      <div class="field">
+        <label for="p-from">Desde</label>
+        <input id="p-from" class="input" type="date" [(ngModel)]="from" (change)="load()" />
+      </div>
+      <div class="field">
+        <label for="p-to">Hasta</label>
+        <input id="p-to" class="input" type="date" [(ngModel)]="to" (change)="load()" />
+      </div>
+      <div class="period-total">
+        <span class="small muted">Total del periodo</span>
+        <strong class="num">{{ periodTotal | money }}</strong>
+        <span class="small muted">{{ purchases.length }} compras</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+
+      <div class="list" *ngIf="!loading && purchases.length">
+        <div class="list-row clickable" *ngFor="let p of purchases" (click)="openDetail(p)">
+          <div class="date-box">
+            <span>{{ p.purchase_date | dateMx: 'short' }}</span>
+          </div>
+          <div class="grow">
+            <div class="title">{{ p.supplier || 'Sin proveedor' }}</div>
+            <div class="sub">
+              {{ p.payment_method }}<span *ngIf="p.buyer"> · compró {{ p.buyer }}</span>
+            </div>
+          </div>
+          <app-icon name="receipt" class="faint" *ngIf="p.ticket_path" title="Con ticket"></app-icon>
+          <div class="end strong num">{{ p.total | money }}</div>
+        </div>
+      </div>
+
+      <div class="empty" *ngIf="!loading && !purchases.length">
+        <app-icon name="purchases"></app-icon>
+        <h3>Sin compras en este periodo</h3>
+        <p>Registra lo que compraste para que el inventario y los costos se mantengan al día.</p>
+        <button class="btn btn-primary btn-sm" type="button" (click)="openNew()">Registrar compra</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Compra</button>
+</ion-content>
+
+<!-- Detalle -->
+<ion-modal class="sheet" [isOpen]="!!detail" (didDismiss)="detail = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="detail as d">
+      <div class="modal-head">
+        <h2>Compra del {{ d.purchase_date | dateMx }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="detail = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <div class="facts">
+          <div><span>Proveedor</span><strong>{{ d.supplier || '—' }}</strong></div>
+          <div><span>Compró</span><strong>{{ d.buyer || '—' }}</strong></div>
+          <div><span>Pago</span><strong>{{ d.payment_method }}</strong></div>
+          <div><span>Registró</span><strong>{{ d.user_name }}</strong></div>
+        </div>
+
+        <div class="card items">
+          <div class="list-row" *ngFor="let i of d.items">
+            <div class="grow">
+              <div class="title">{{ i.input_name }}</div>
+              <div class="sub">
+                {{ i.quantity | qty }} × {{ i.unit_cost | money }} · entraron {{ i.total_base_quantity | qty }} {{ i.unit }}
+              </div>
+            </div>
+            <div class="end">
+              <div class="strong num">{{ i.subtotal | money }}</div>
+              <div class="small muted num" *ngIf="i.total_base_quantity > 0">{{ i.subtotal / i.total_base_quantity | money }}/{{ i.unit }}</div>
+            </div>
+          </div>
+          <div class="list-row total-row">
+            <div class="grow strong">Total</div>
+            <div class="end strong num">{{ d.total | money }}</div>
+          </div>
+        </div>
+
+        <div class="section-title"><h2>Ticket</h2><span class="small muted" *ngIf="d.ticket_path && !ticketBroken">Toca la foto para ampliarla</span></div>
+        <ng-container *ngIf="d.ticket_path">
+          <button type="button" class="ticket" *ngIf="!ticketBroken" (click)="ticketZoom = true">
+            <img [apiSrc]="d.ticket_path" alt="" (error)="ticketBroken = true" />
+          </button>
+          <div class="notice warning" *ngIf="ticketBroken">
+            <app-icon name="alert"></app-icon>
+            <div>
+              No se encontró la foto del ticket en el servidor (pudo borrarse al reemplazar la carpeta del backend).
+              Toca <strong>Editar</strong> y vuelve a tomarla.
+            </div>
+          </div>
+        </ng-container>
+        <p class="muted small" *ngIf="!d.ticket_path">Esta compra no tiene foto del ticket.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger-ghost" type="button" (click)="remove(d)"><app-icon name="trash"></app-icon>Eliminar</button>
+        <span class="grow"></span>
+        <button class="btn btn-dark" type="button" (click)="openEdit(d)"><app-icon name="edit"></app-icon>Editar</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Ticket ampliado -->
+<ion-modal class="sheet sheet-wide" [isOpen]="ticketZoom" (didDismiss)="ticketZoom = false">
+  <ng-template>
+    <div class="modal-shell zoom" *ngIf="detail as d">
+      <div class="modal-head">
+        <h2>Ticket · {{ d.supplier || 'Compra' }} · {{ d.purchase_date | dateMx }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="ticketZoom = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body zoom-body">
+        <img *ngIf="d.ticket_path" [apiSrc]="d.ticket_path" alt="Ticket de la compra" />
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Registrar / editar -->
+<ion-modal class="sheet sheet-wide" [isOpen]="formOpen" (didDismiss)="formOpen = false" [backdropDismiss]="false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ editingId ? 'Editar compra' : 'Registrar compra' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="formOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <div class="grid-2">
+          <div class="field">
+            <label for="f-date">Fecha</label>
+            <input id="f-date" class="input" type="date" [(ngModel)]="form.purchase_date" />
+          </div>
+          <div class="field">
+            <label for="f-pm">Método de pago</label>
+            <select id="f-pm" class="select" [(ngModel)]="form.payment_method_id">
+              <option *ngFor="let m of methods" [ngValue]="m.id">{{ m.name }}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-sup">Proveedor</label>
+            <input id="f-sup" class="input" [(ngModel)]="form.supplier" list="suppliers" placeholder="Ej. Costco, Mercado" maxlength="150" />
+            <datalist id="suppliers"><option *ngFor="let s of suppliers" [value]="s"></option></datalist>
+          </div>
+          <div class="field">
+            <label for="f-buyer">Comprador</label>
+            <input id="f-buyer" class="input" [(ngModel)]="form.buyer" placeholder="Quién hizo la compra" maxlength="100" />
+          </div>
+        </div>
+
+        <div class="section-title">
+          <h2>Artículos</h2>
+          <span class="small muted">Cómo lo compraste y a qué precio</span>
+        </div>
+
+        <div class="lines">
+          <div class="line card" *ngFor="let l of lines; let i = index">
+            <div class="line-top">
+              <div class="field grow">
+                <label [for]="'l-in-' + i">Insumo</label>
+                <select [id]="'l-in-' + i" class="select" [ngModel]="l.input_id" (ngModelChange)="onInputChange(l, $event)">
+                  <option [ngValue]="null" disabled>Selecciona un insumo</option>
+                  <option *ngFor="let inp of inputs" [ngValue]="inp.id">{{ inp.name }}</option>
+                  <option [ngValue]="NEW_INPUT">+ Registrar insumo nuevo…</option>
+                </select>
+              </div>
+              <button class="btn btn-ghost btn-icon remove" type="button" (click)="removeLine(i)" aria-label="Quitar renglón"><app-icon name="trash"></app-icon></button>
+            </div>
+            <div class="line-fields">
+              <div class="field">
+                <label [for]="'l-q-' + i">Cantidad</label>
+                <input [id]="'l-q-' + i" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="l.quantity" />
+              </div>
+              <div class="field">
+                <label [for]="'l-pk-' + i">Presentación</label>
+                <input [id]="'l-pk-' + i" class="input" [(ngModel)]="l.package_type" [attr.list]="'packs'" [placeholder]="input(l.input_id)?.unit || 'paquete, caja…'" maxlength="40" />
+              </div>
+              <div class="field">
+                <label [for]="'l-c-' + i">{{ l.package_type ? 'Cada ' + l.package_type + ' contiene' : 'Cada una contiene' }}</label>
+                <div class="input-group">
+                  <input [id]="'l-c-' + i" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="l.content_per_package" />
+                  <span class="addon">{{ input(l.input_id)?.unit || 'unidad' }}</span>
+                </div>
+              </div>
+              <div class="field">
+                <label [for]="'l-p-' + i">Precio por {{ l.package_type || input(l.input_id)?.unit || 'unidad' }}</label>
+                <div class="input-group">
+                  <span class="addon">$</span>
+                  <input [id]="'l-p-' + i" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="l.unit_cost" />
+                </div>
+              </div>
+            </div>
+            <div class="line-summary" *ngIf="l.input_id">
+              <span>Entran <strong>{{ lineBase(l) | qty }} {{ input(l.input_id)?.unit }}</strong> al inventario</span>
+              <span *ngIf="lineUnitCost(l) !== null">· {{ lineUnitCost(l) | money }} por {{ input(l.input_id)?.unit }}</span>
+              <span class="grow"></span>
+              <strong class="num">{{ lineTotal(l) | money }}</strong>
+            </div>
+          </div>
+          <button class="btn btn-block add-line" type="button" (click)="addLine()"><app-icon name="plus"></app-icon>Agregar artículo</button>
+          <datalist id="packs">
+            <option value="paquete"></option><option value="caja"></option><option value="bolsa"></option>
+            <option value="kg"></option><option value="bote"></option><option value="charola"></option><option value="pieza"></option>
+          </datalist>
+        </div>
+
+        <div class="section-title"><h2>Foto del ticket</h2><span class="small muted">Opcional</span></div>
+        <app-photo-picker [current]="ticket" [wide]="true" label="Toma una foto del ticket" (changed)="onTicket($event)"></app-photo-picker>
+
+        <div class="field reason" *ngIf="editingId">
+          <label for="f-reason">Motivo de la corrección</label>
+          <input id="f-reason" class="input" [(ngModel)]="form.change_reason" placeholder="Ej. precio mal capturado" maxlength="255" />
+          <span class="hint">Queda en el historial de la compra junto con los datos anteriores.</span>
+        </div>
+
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <div class="foot-total">
+          <span class="small muted">Total</span>
+          <strong class="num">{{ total | money }}</strong>
+        </div>
+        <button class="btn" type="button" (click)="formOpen = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar compra' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Insumo nuevo desde un renglón -->
+<ion-modal class="sheet" [isOpen]="inputModalOpen" (didDismiss)="inputModalOpen = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Registrar insumo</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="inputModalOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small first">Al guardarlo se agrega a este renglón y sigues con la compra. La presentación y el precio los capturas en el renglón.</p>
+        <app-input-form (saved)="onInputCreated($event)"></app-input-form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="inputModalOpen = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="saveInput()" [disabled]="savingInput">{{ savingInput ? 'Guardando…' : 'Guardar y continuar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

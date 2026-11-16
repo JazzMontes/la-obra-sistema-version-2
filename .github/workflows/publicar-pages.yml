@@ -1,0 +1,65 @@
+# Compila la app y la publica en GitHub Pages en cada push a main (o a mano desde Actions).
+# Requiere: Settings → Pages → Source: GitHub Actions
+#           Settings → Secrets and variables → Actions → Variables: SUPABASE_URL y SUPABASE_KEY (clave pública)
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      dir: ${{ steps.out.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Escribir la conexión de Supabase
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+        run: node scripts/configurar-supabase.mjs
+
+      - name: Compilar
+        run: npx ng build --configuration production --base-href ./
+
+      - name: Ubicar la carpeta compilada
+        id: out
+        run: |
+          if [ -f www/browser/index.html ]; then DIR=www/browser;
+          elif [ -f www/index.html ]; then DIR=www;
+          else echo "No se encontró index.html en www/"; ls -R www | head -50; exit 1; fi
+          touch "$DIR/.nojekyll"
+          echo "dir=$DIR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.out.outputs.dir }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

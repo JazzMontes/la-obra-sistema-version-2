@@ -1,0 +1,64 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-menu-button *ngIf="loggedIn"></ion-menu-button>
+      <a class="btn btn-ghost btn-icon" routerLink="/login" *ngIf="!loggedIn" aria-label="Volver"><app-icon name="back"></app-icon></a>
+    </ion-buttons>
+    <ion-title>Servidor</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Conexión y respaldo</h1>
+        <p>La app guarda y consulta la información en Supabase: una base de datos PostgreSQL en internet. No necesita una computadora encendida con XAMPP.</p>
+      </div>
+    </div>
+
+    <div class="diagram card card-pad">
+      <div class="node"><app-icon name="pos"></app-icon><strong>App</strong><span>Web o APK</span></div>
+      <div class="link-line"><span>HTTPS + JSON</span></div>
+      <div class="node"><app-icon name="server"></app-icon><strong>Supabase</strong><span>{{ host }}</span></div>
+      <div class="link-line"><span>la_obra_v2_api</span></div>
+      <div class="node"><app-icon name="layers"></app-icon><strong>PostgreSQL</strong><span>esquema la_obra_v2</span></div>
+    </div>
+
+    <div class="card card-pad stack">
+      <div class="field">
+        <label>Proyecto de Supabase</label>
+        <div class="url num">{{ config.settings.url || '—' }}</div>
+      </div>
+      <div class="notice danger" *ngIf="configError">
+        <app-icon name="alert"></app-icon>
+        <div>{{ configError }}</div>
+      </div>
+      <div class="row wrap">
+        <button class="btn btn-primary" type="button" (click)="test()" [disabled]="testing || !apiUrl">{{ testing ? 'Probando…' : 'Probar conexión' }}</button>
+      </div>
+      <div class="notice" *ngIf="result" [class.success]="result.ok" [class.danger]="!result.ok">
+        <app-icon [name]="result.ok ? 'check' : 'alert'"></app-icon>
+        <div>
+          <strong>{{ result.ok ? 'Conectado' : 'Sin conexión' }}</strong> · {{ result.text }}
+          <span *ngIf="result.ms"> · {{ result.ms }} ms</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad stack" *ngIf="loggedIn && isAdmin">
+      <div>
+        <h3>Respaldo</h3>
+        <p class="small muted">El plan gratuito de Supabase no guarda respaldos descargables. Descarga uno cada semana desde la computadora y guárdalo en Drive o una USB. No lo subas a GitHub.</p>
+      </div>
+      <div class="row wrap">
+        <button class="btn btn-dark" type="button" (click)="backup(true)" [disabled]="backingUp">{{ backingUp ? 'Preparando…' : 'Descargar respaldo (con fotos)' }}</button>
+        <button class="btn" type="button" (click)="backup(false)" [disabled]="backingUp">Sin fotos</button>
+        <label class="btn btn-danger-ghost" [class.disabled]="restoring">
+          {{ restoring ? 'Restaurando…' : 'Restaurar…' }}
+          <input type="file" accept="application/json,.json" hidden (change)="restore($event)" [disabled]="restoring" />
+        </label>
+      </div>
+    </div>
+  </div>
+</ion-content>

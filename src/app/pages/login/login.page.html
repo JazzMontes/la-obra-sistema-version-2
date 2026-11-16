@@ -1,0 +1,49 @@
+<ion-content>
+  <div class="login">
+    <aside class="hero">
+      <div class="hero-brand">
+        <div class="mark">LO</div>
+        <span>La Obra</span>
+      </div>
+      <div class="hero-copy">
+        <h2>Compras, inventario, costos y ventas en un mismo lugar.</h2>
+        <p>Lo que compras alimenta el inventario y el costo de tus recetas. Lo que vendes se descuenta solo.</p>
+      </div>
+      <div class="hero-foot">Sistema de punto de venta y costos</div>
+    </aside>
+
+    <main class="panel">
+      <form class="form" (ngSubmit)="login()">
+        <div class="mobile-brand">
+          <div class="mark">LO</div>
+          <span>La Obra</span>
+        </div>
+        <h1>Iniciar sesión</h1>
+        <p class="muted">Usa la cuenta que te dio el administrador.</p>
+
+        <div class="field">
+          <label for="lg-user">Usuario</label>
+          <input id="lg-user" name="username" class="input" [(ngModel)]="username" autocomplete="username" autocapitalize="off" />
+        </div>
+        <div class="field">
+          <label for="lg-pass">Contraseña</label>
+          <div class="input-group">
+            <input id="lg-pass" name="password" class="input" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password" autocomplete="current-password" />
+            <button type="button" class="addon eye" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              <app-icon name="eye"></app-icon>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-error" *ngIf="error">
+          {{ error }}
+          <button type="button" class="link small tech-link" *ngIf="techText" (click)="showTech = !showTech">{{ showTech ? 'Ocultar' : 'Ver' }} detalles técnicos</button>
+          <pre *ngIf="showTech">{{ techText }}</pre>
+        </div>
+
+        <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Entrando…' : 'Entrar' }}</button>
+
+      </form>
+    </main>
+  </div>
+</ion-content>

@@ -1,0 +1,186 @@
+.block-gap {
+  margin-bottom: 14px;
+}
+
+.center {
+  text-align: center;
+}
+
+// Explicación previa al permiso
+.perm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+
+  h3 {
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
+    max-width: 440px;
+  }
+}
+
+.perm-icon {
+  width: 56px;
+  height: 56px;
+  padding: 14px;
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+
+.retry {
+  margin-top: 8px;
+}
+
+// Coordenadas + radar
+.geo-grid {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 18px;
+  align-items: center;
+
+  @media (max-width: 620px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.coords {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+
+  .link {
+    grid-column: 1 / -1;
+  }
+}
+
+.coord {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  strong {
+    font-size: 19px;
+    letter-spacing: -0.01em;
+  }
+}
+
+.radar {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 220px;
+
+  svg {
+    width: 100%;
+    display: block;
+  }
+
+  .ring {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1;
+  }
+
+  .axis {
+    stroke: var(--border);
+    stroke-width: 0.75;
+    stroke-dasharray: 2 3;
+  }
+
+  .fence {
+    fill: var(--danger-soft);
+    stroke: var(--danger);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+
+    &.ok {
+      fill: var(--success-soft);
+      stroke: var(--success);
+    }
+  }
+
+  .shop {
+    fill: var(--brand);
+    stroke: var(--brand-ink);
+    stroke-width: 1.5;
+  }
+
+  .acc {
+    fill: rgba(37, 99, 235, 0.12);
+    stroke: rgba(37, 99, 235, 0.4);
+    stroke-width: 1;
+  }
+
+  .me {
+    fill: #2563eb;
+    stroke: #fff;
+    stroke-width: 2;
+
+    &.out {
+      fill: var(--danger);
+    }
+  }
+
+  .north {
+    font-size: 10px;
+    font-weight: 700;
+    fill: var(--muted);
+    text-anchor: middle;
+  }
+
+  figcaption {
+    text-align: center;
+    margin-top: 6px;
+  }
+
+  .key {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin: 0 4px 0 8px;
+    vertical-align: middle;
+    border-radius: 2px;
+
+    &.shop {
+      background: var(--brand);
+    }
+
+    &.me {
+      border-radius: 50%;
+      background: #2563eb;
+    }
+  }
+}
+
+// Registro
+.check-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+
+  .field {
+    width: 160px;
+  }
+}
+
+.avatar.in {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+input[type='range'] {
+  width: 100%;
+  accent-color: var(--brand-hover);
+}

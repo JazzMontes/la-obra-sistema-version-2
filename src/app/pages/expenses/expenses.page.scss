@@ -1,0 +1,53 @@
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 8px;
+
+  .field {
+    width: 160px;
+  }
+}
+
+.period-total {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+
+  strong {
+    font-size: 22px;
+  }
+}
+
+.toggle {
+  margin: 4px 0 12px;
+}
+
+.strike {
+  text-decoration: line-through;
+  color: var(--faint);
+}
+
+.big-input {
+  font-size: 20px !important;
+  font-weight: 700;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button {
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+  }
+}

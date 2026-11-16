@@ -1,0 +1,40 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Métodos de pago</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Métodos de pago</h1>
+        <p>Se usan al cobrar y al registrar compras. "Efectivo" calcula el cambio y cuenta para el corte de caja.</p>
+      </div>
+    </div>
+
+    <form class="card card-pad add" (ngSubmit)="add()">
+      <input class="input" name="newName" [(ngModel)]="newName" placeholder="Ej. Tarjeta de crédito" maxlength="60" />
+      <button class="btn btn-primary" type="submit" [disabled]="!newName.trim() || busy"><app-icon name="plus"></app-icon>Agregar</button>
+    </form>
+
+    <div class="card">
+      <ng-container *ngIf="loading">
+        <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+      </ng-container>
+      <div class="list" *ngIf="!loading && list.length">
+        <div class="list-row" *ngFor="let m of list">
+          <div class="avatar avatar-sm"><app-icon [name]="isCash(m) ? 'cash' : 'card'"></app-icon></div>
+          <div class="grow">
+            <div class="title" [class.faint]="m.status !== 'active'">{{ m.name }}</div>
+            <div class="sub" *ngIf="isCash(m)">Calcula cambio · entra al corte</div>
+          </div>
+          <span class="badge" *ngIf="m.status !== 'active'">Inactivo</span>
+          <button class="btn btn-sm" type="button" (click)="toggle(m)">{{ m.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
+          <button class="btn btn-danger-ghost btn-icon" type="button" (click)="remove(m)" aria-label="Eliminar"><app-icon name="trash"></app-icon></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</ion-content>

@@ -1,0 +1,24 @@
+# Supabase (plan gratuito) pausa el proyecto tras 7 días sin uso. Esto lo "toca" cada 3 días.
+# Usa las mismas variables SUPABASE_URL y SUPABASE_KEY del repositorio.
+name: Mantener Supabase activo
+
+on:
+  schedule:
+    - cron: '17 15 */3 * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar a health.php
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ vars.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then echo "Faltan las variables SUPABASE_URL / SUPABASE_KEY"; exit 1; fi
+          AUTH=()
+          case "$SUPABASE_KEY" in eyJ*) AUTH=(-H "Authorization: Bearer $SUPABASE_KEY");; esac
+          curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/la_obra_v2_api" \
+            -H "apikey: $SUPABASE_KEY" "${AUTH[@]}" -H "Content-Type: application/json" \
+            -d '{"path":"health.php","method":"GET"}'

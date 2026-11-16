@@ -1,0 +1,237 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Productos</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm desktop-only" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nuevo producto</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Productos y recetas</h1>
+        <p>Lo que vendes. En la receta de cada producto indicas los insumos y preparaciones que lleva: así se calcula su costo y se descuenta del inventario al entregarlo.</p>
+      </div>
+    </div>
+
+    <!-- Estado de sincronización -->
+    <div class="sync-bar" [class.offline]="offline" *ngIf="offline || pendingCount">
+      <app-icon [name]="offline ? 'wifiOff' : 'sync'"></app-icon>
+      <div class="grow">
+        <strong>{{ offline ? 'Trabajando sin conexión' : 'Cambios por sincronizar' }}</strong>
+        <span class="small"> · {{ pendingCount }} pendiente(s). Puedes crear, editar y eliminar productos; se enviarán al volver la conexión.</span>
+      </div>
+      <button class="btn btn-sm" type="button" (click)="syncNow()" [disabled]="offline || syncing">{{ syncing ? 'Sincronizando…' : 'Sincronizar' }}</button>
+    </div>
+
+    <div class="notice danger failed" *ngIf="failed.length">
+      <app-icon name="alert"></app-icon>
+      <div class="grow">
+        <strong>{{ failed.length }} cambio(s) no se pudieron sincronizar</strong>
+        <ul>
+          <li *ngFor="let f of failed">
+            {{ f.op === 'create' ? 'Alta' : f.op === 'update' ? 'Edición' : 'Baja' }} de "{{ f.changes['name'] || '#' + f.id }}": {{ f.error }}
+          </li>
+        </ul>
+      </div>
+      <button class="btn btn-sm" type="button" (click)="clearFailed()">Entendido</button>
+    </div>
+
+    <div class="toolbar">
+      <div class="search grow">
+        <app-icon name="search"></app-icon>
+        <input class="input" [(ngModel)]="query" placeholder="Buscar producto" />
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="status === 'active'" (click)="status = 'active'">Activos</button>
+        <button type="button" [class.active]="status === 'inactive'" (click)="status = 'inactive'">Inactivos</button>
+      </div>
+    </div>
+    <div class="cat-chips" *ngIf="activeCategories.length">
+      <button type="button" [class.active]="!category" (click)="category = null">Todas</button>
+      <button type="button" *ngFor="let c of activeCategories" [class.active]="category === c.id" (click)="category = c.id">{{ c.name }}</button>
+    </div>
+
+    <ng-container *ngIf="loading">
+      <div class="card"><div class="skeleton" *ngFor="let i of [1, 2, 3]"></div></div>
+    </ng-container>
+
+    <div class="grid" *ngIf="!loading && visible.length">
+      <button type="button" class="card product" *ngFor="let p of visible" (click)="openEdit(p)">
+        <div class="photo">
+          <img *ngIf="imageUrl(p)" [apiSrc]="p.image_path" [alt]="p.name" (error)="p._imgError = true" />
+          <span *ngIf="!imageUrl(p)" class="initial">{{ (p.name || '?').charAt(0) }}</span>
+          <span class="badge badge-brand pending" *ngIf="p.pending_sync">Pendiente</span>
+          <span class="badge badge-danger pending" *ngIf="p.is_available === false">No disponible</span>
+        </div>
+        <div class="info">
+          <div class="name">{{ p.name }}</div>
+          <div class="small muted">{{ p.category?.name || p.category_name }} · {{ typeLabel(p.type) }}</div>
+          <div class="row-between price-row">
+            <strong class="num">{{ p.price | money }}</strong>
+            <ng-container *ngIf="cost(p) as c">
+              <span class="badge plain" *ngIf="!c.has_recipe">Sin receta</span>
+              <span class="badge badge-warning plain" *ngIf="c.has_recipe && !c.complete">Faltan precios</span>
+              <span class="badge plain" *ngIf="c.complete"
+                [class.badge-success]="c.gross_margin >= 60" [class.badge-warning]="c.gross_margin < 60 && c.gross_margin >= 35" [class.badge-danger]="c.gross_margin < 35">
+                {{ c.gross_margin | qty: 0 }}% margen
+              </span>
+            </ng-container>
+          </div>
+        </div>
+      </button>
+    </div>
+
+    <div class="card empty" *ngIf="!loading && !visible.length">
+      <app-icon name="products"></app-icon>
+      <h3>{{ query || category ? 'Sin resultados' : 'Aún no hay productos' }}</h3>
+      <p>Registra lo que vendes y define su receta para conocer su costo.</p>
+      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()">Nuevo producto</button>
+    </div>
+  </div>
+
+  <button class="fab" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Producto</button>
+</ion-content>
+
+<ion-modal class="sheet sheet-wide" [isOpen]="open" (didDismiss)="open = false" [backdropDismiss]="false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ editingId ? form.name || 'Producto' : 'Nuevo producto' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="tabs">
+        <div class="segmented">
+          <button type="button" [class.active]="tab === 'data'" (click)="tab = 'data'">Datos</button>
+          <button type="button" [class.active]="tab === 'recipe'" (click)="tab = 'recipe'" [disabled]="!editingId || editingId < 0">Receta</button>
+        </div>
+      </div>
+
+      <!-- Datos -->
+      <div class="modal-body" *ngIf="tab === 'data'">
+        <app-photo-picker [current]="photo" label="Foto del producto" (changed)="onPhoto($event)"></app-photo-picker>
+
+        <div class="grid-2 form-grid">
+          <div class="field">
+            <label for="pd-name">Nombre</label>
+            <input id="pd-name" class="input" [(ngModel)]="form.name" placeholder="Ej. Hamburguesa clásica" maxlength="100" />
+          </div>
+          <div class="field">
+            <label for="pd-cat">Categoría</label>
+            <select id="pd-cat" class="select" [(ngModel)]="form.category_id">
+              <option *ngFor="let c of activeCategories" [ngValue]="c.id">{{ c.name }}</option>
+            </select>
+          </div>
+          <div class="field span-2">
+            <label for="pd-desc">Descripción</label>
+            <input id="pd-desc" class="input" [(ngModel)]="form.description" placeholder="Ej. Carne de res, queso, lechuga y jitomate" maxlength="255" />
+          </div>
+          <div class="field">
+            <label>Tipo</label>
+            <div class="segmented block">
+              <button type="button" [class.active]="form.type === 'prepared'" (click)="form.type = 'prepared'">Preparado</button>
+              <button type="button" [class.active]="form.type === 'resale'" (click)="form.type = 'resale'">Reventa</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="pd-price">Precio de venta</label>
+            <div class="input-group">
+              <span class="addon">$</span>
+              <input id="pd-price" class="input" type="number" inputmode="decimal" min="0" step="0.5" [(ngModel)]="form.price" />
+            </div>
+          </div>
+        </div>
+        <label class="check avail" *ngIf="editingId">
+          <input type="checkbox" [(ngModel)]="form.is_available" />Disponible para vender hoy
+        </label>
+
+        <div class="danger-zone" *ngIf="editingId">
+          <button class="btn btn-sm" type="button" (click)="toggleStatus()" [disabled]="offline || editingId < 0">
+            {{ form.status === 'active' ? 'Desactivar' : 'Activar' }}
+          </button>
+          <button class="btn btn-sm btn-danger-ghost" type="button" (click)="remove()"><app-icon name="trash"></app-icon>Eliminar</button>
+        </div>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+
+      <!-- Receta -->
+      <div class="modal-body" *ngIf="tab === 'recipe'">
+        <div class="notice warning" *ngIf="offline">
+          <app-icon name="wifiOff"></app-icon><div>La receta necesita conexión con el servidor.</div>
+        </div>
+        <p class="muted small first">
+          Lo que lleva <strong>una</strong> unidad de este producto. Usa preparaciones para lo que cocinas por lotes (ej. una porción de carne)
+          e insumos directos para lo demás (ej. el pan).
+        </p>
+
+        <div class="card" *ngIf="recipeLoaded; else loadingRecipe">
+          <div class="comp" *ngFor="let c of recipe; let i = index">
+            <select class="select" [(ngModel)]="c.ref" [attr.aria-label]="'Componente ' + (i + 1)">
+              <option [ngValue]="null" disabled>Selecciona…</option>
+              <optgroup label="Preparaciones" *ngIf="preparations.length">
+                <option *ngFor="let p of preparations" [ngValue]="'p:' + p.id">{{ p.name }}</option>
+              </optgroup>
+              <optgroup label="Insumos">
+                <option *ngFor="let inp of inputs" [ngValue]="'i:' + inp.id">{{ inp.name }}</option>
+              </optgroup>
+            </select>
+            <div class="input-group">
+              <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="c.quantity" aria-label="Cantidad" />
+              <span class="addon">{{ componentUnit(c) }}</span>
+            </div>
+            <select class="select" [(ngModel)]="c.delivery_mode" aria-label="Cuándo se usa">
+              <option value="always">Siempre</option>
+              <option value="local">Solo comer aquí</option>
+              <option value="takeaway">Solo para llevar</option>
+            </select>
+            <span class="num cost">{{ componentCost(c) | money }}</span>
+            <button class="btn btn-ghost btn-icon" type="button" (click)="removeComponent(i)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
+          </div>
+          <div class="empty small" *ngIf="!recipe.length">
+            <p>Este producto todavía no tiene receta.</p>
+          </div>
+          <div class="card-foot">
+            <button class="link small" type="button" (click)="addComponent()">+ Agregar insumo o preparación</button>
+          </div>
+        </div>
+        <ng-template #loadingRecipe>
+          <div class="card"><div class="skeleton" *ngFor="let i of [1, 2]"></div></div>
+        </ng-template>
+
+        <div class="cost-box">
+          <div>
+            <span class="small muted">Precio de venta</span>
+            <strong class="num">{{ form.price | money }}</strong>
+          </div>
+          <div>
+            <span class="small muted">Costo{{ hasModes ? ' (comer aquí)' : '' }}</span>
+            <strong class="num">{{ recipeCost('local') | money }}</strong>
+          </div>
+          <div *ngIf="hasModes">
+            <span class="small muted">Costo (para llevar)</span>
+            <strong class="num">{{ recipeCost('takeaway') | money }}</strong>
+          </div>
+          <div>
+            <span class="small muted">Margen</span>
+            <strong class="num big">{{ margin(recipeCost('local')) === null ? '—' : (margin(recipeCost('local')) | qty: 1) + '%' }}</strong>
+          </div>
+        </div>
+        <p class="small muted">Los costos salen de la última compra de cada insumo. Si ves "—", falta registrar la compra de algún componente.</p>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="open = false">Cerrar</button>
+        <button class="btn btn-primary" type="button" *ngIf="tab === 'data'" (click)="saveData()" [disabled]="saving">
+          {{ saving ? 'Guardando…' : editingId ? 'Guardar' : 'Crear y definir receta' }}
+        </button>
+        <button class="btn btn-primary" type="button" *ngIf="tab === 'recipe'" (click)="saveRecipe()" [disabled]="saving || offline">
+          {{ saving ? 'Guardando…' : 'Guardar receta' }}
+        </button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
