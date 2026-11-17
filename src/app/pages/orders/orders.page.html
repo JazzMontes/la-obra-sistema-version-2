@@ -274,38 +274,69 @@
         <div class="field">
           <label>Cobro</label>
           <div class="segmented block">
-            <button type="button" [class.active]="editPaid" (click)="editPaid = true">Ya pagó</button>
-            <button type="button" [class.active]="!editPaid" (click)="editPaid = false">Por cobrar</button>
+            <button type="button" [class.active]="editPaid" (click)="editPaid = true; editRefundDone = false">Ya pagó</button>
+            <button type="button" [class.active]="!editPaid" (click)="editPaid = false; editRefundDone = false">Por cobrar</button>
           </div>
         </div>
-        <ng-container *ngIf="editPaid">
-          <div class="methods">
-            <button type="button" *ngFor="let m of editMethods" [class.active]="editMethodId === m.id" (click)="editMethodId = m.id">{{ m.name }}</button>
+        <div class="methods" *ngIf="editPaid">
+          <button type="button" *ngFor="let m of editMethods" [class.active]="editMethodId === m.id" (click)="editMethodId = m.id; editRefundDone = false; editDiffDone = false">{{ m.name }}</button>
+        </div>
+
+        <!-- Cuadre: qué hacer con la diferencia -->
+        <div class="settle" *ngIf="editPaid || editWasPaid">
+          <div class="settle-row muted" *ngIf="editWasPaid">
+            <span>Ya te había pagado ({{ e.payment_method }})</span>
+            <span class="num">{{ editOldTotal | money }}</span>
           </div>
-          <div class="field" *ngIf="editIsCash">
-            <label for="e-cash">Efectivo recibido</label>
-            <div class="input-group">
-              <span class="addon">$</span>
-              <input id="e-cash" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="editCash" [placeholder]="editTotal.toFixed(2)" />
+          <div class="settle-row muted" *ngIf="editPaid">
+            <span>Nuevo total</span>
+            <span class="num">{{ editTotal | money }}</span>
+          </div>
+
+          <!-- Mismo método y no cambió el total -->
+          <div class="settle-big ok" *ngIf="editSameMethod && editDiff === 0">
+            <app-icon name="check"></app-icon><span>El cobro queda igual, no hay diferencia.</span>
+          </div>
+
+          <!-- Hay que regresar -->
+          <ng-container *ngIf="editRefund > 0">
+            <div class="settle-big refund">
+              <span>Regresa al cliente{{ editSameMethod ? '' : ' (' + e.payment_method + ')' }}</span>
+              <strong class="num">{{ editRefund | money }}</strong>
             </div>
-            <span class="small" *ngIf="editChange !== null" [class.text-danger]="editChange < 0" [class.text-success]="editChange >= 0">
-              {{ editChange < 0 ? 'Faltan' : 'Cambio' }}: {{ (editChange < 0 ? -editChange : editChange) | money }}
-            </span>
-            <span class="small muted" *ngIf="editChange === null">Si lo dejas vacío se registra el total exacto.</span>
-          </div>
-          <div class="notice" *ngIf="editPrevPaid !== null && editPrevPaid !== editTotal">
-            <app-icon name="info"></app-icon>
-            <div>
-              Ya se habían cobrado <strong class="num">{{ editPrevPaid | money }}</strong>.
-              <ng-container *ngIf="editPrevPaid > editTotal">Hay que devolver <strong class="num">{{ editPrevPaid - editTotal | money }}</strong>.</ng-container>
-              <ng-container *ngIf="editPrevPaid < editTotal">Falta cobrar <strong class="num">{{ editTotal - editPrevPaid | money }}</strong>.</ng-container>
-              El cobro se guarda con el nuevo total.
+            <label class="check">
+              <input type="checkbox" [(ngModel)]="editRefundDone" />
+              <span>Ya le regresé {{ editRefund | money }}</span>
+            </label>
+          </ng-container>
+
+          <!-- Hay que cobrar -->
+          <ng-container *ngIf="editToCharge > 0">
+            <div class="settle-big charge">
+              <span>{{ editSameMethod ? 'Falta cobrar' : 'Cobra' }}{{ editMethodName ? ' (' + editMethodName + ')' : '' }}</span>
+              <strong class="num">{{ editToCharge | money }}</strong>
             </div>
-          </div>
-        </ng-container>
-        <div class="notice warning" *ngIf="!editPaid && e.payment_status === 'paid'">
-          <app-icon name="alert"></app-icon>
-          <div>Se quitará el cobro de <strong class="num">{{ e.total | money }}</strong> y el pedido quedará por cobrar.</div>
+            <div class="field" *ngIf="editIsCash">
+              <label for="e-cash">¿Con cuánto te pagó{{ editSameMethod ? ' la diferencia' : '' }}?</label>
+              <div class="bills">
+                <button type="button" [class.active]="editReceived === editToCharge" (click)="setEditReceived(editToCharge)">Exacto</button>
+                <button type="button" *ngFor="let bill of editBills" [class.active]="editReceived === bill" (click)="setEditReceived(bill)">{{ bill | money }}</button>
+              </div>
+              <div class="input-group">
+                <span class="addon">$</span>
+                <input *ngIf="editSameMethod" id="e-cash" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="editDiffCash" placeholder="Otra cantidad" />
+                <input *ngIf="!editSameMethod" id="e-cash" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="editCash" placeholder="Otra cantidad" />
+              </div>
+              <div class="settle-big" *ngIf="editChange !== null" [class.refund]="editChange > 0" [class.ok]="editChange === 0" [class.bad]="editChange < 0">
+                <span>{{ editChange < 0 ? 'No alcanza, faltan' : editChange === 0 ? 'Pago exacto' : 'Su cambio' }}</span>
+                <strong class="num" *ngIf="editChange !== 0">{{ (editChange < 0 ? -editChange : editChange) | money }}</strong>
+              </div>
+            </div>
+            <label class="check" *ngIf="!editIsCash && editSameMethod">
+              <input type="checkbox" [(ngModel)]="editDiffDone" />
+              <span>Ya cobré la diferencia de {{ editToCharge | money }}</span>
+            </label>
+          </ng-container>
         </div>
 
         <div class="field">

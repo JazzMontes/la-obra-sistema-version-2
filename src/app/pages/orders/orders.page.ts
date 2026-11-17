@@ -49,7 +49,10 @@ export class OrdersPage {
   editCustomer = '';
   editPaid = false;
   editMethodId: number | null = null;
-  editCash: number | null = null;
+  editCash: number | null = null;       // con cuánto pagó el total (cobro nuevo o con otro método)
+  editDiffCash: number | null = null;   // con cuánto pagó la diferencia (mismo método, el total subió)
+  editRefundDone = false;               // confirmó que ya regresó el dinero
+  editDiffDone = false;                 // confirmó que ya cobró la diferencia (tarjeta / transferencia)
   editReason = '';
   editError = '';
   savingEdit = false;
@@ -229,7 +232,10 @@ export class OrdersPage {
     this.editPaid = o.payment_status === 'paid';
     this.editMethodId = o.payment_method_id
       ?? this.methods.find(m => m.name.trim().toLowerCase() === 'efectivo')?.id ?? this.methods[0]?.id ?? null;
-    this.editCash = o.cash_received ?? null;
+    this.editCash = null;
+    this.editDiffCash = null;
+    this.editRefundDone = false;
+    this.editDiffDone = false;
     this.editReason = '';
     this.editError = '';
     this.refreshAddOptions();
@@ -280,18 +286,68 @@ export class OrdersPage {
     return String(this.editMethods.find(m => m.id === this.editMethodId)?.name ?? '').trim().toLowerCase() === 'efectivo';
   }
 
-  get editChange(): number | null {
-    if (!this.editPaid || !this.editIsCash || this.editCash === null || (this.editCash as any) === '') return null;
-    return Math.round((Number(this.editCash) - this.editTotal) * 100) / 100;
-  }
-
   get editOldTotal(): number {
     return Number(this.editing?.total ?? 0);
   }
 
-  // Lo que se cobró antes y la diferencia con el nuevo total (para devolver o cobrar la diferencia)
-  get editPrevPaid(): number | null {
-    return this.editing?.payment_status === 'paid' ? Number(this.editing.total) : null;
+  // ---- Cómo se cuadra el cobro al editar ----
+  // Ya estaba cobrado
+  get editWasPaid(): boolean {
+    return this.editing?.payment_status === 'paid';
+  }
+
+  // Mismo método que el cobro anterior: solo se cuadra la diferencia
+  get editSameMethod(): boolean {
+    return this.editWasPaid && this.editPaid && this.editMethodId === this.editing?.payment_method_id;
+  }
+
+  // Nuevo total − lo que ya se había cobrado (positivo = falta cobrar; negativo = hay que regresar)
+  get editDiff(): number {
+    return Math.round((this.editTotal - this.editOldTotal) * 100) / 100;
+  }
+
+  // Hay que regresar dinero: bajó el total, se cambió de método o se quitó el cobro
+  get editRefund(): number {
+    if (!this.editWasPaid) return 0;
+    if (!this.editPaid || !this.editSameMethod) return this.editOldTotal;
+    return this.editDiff < 0 ? -this.editDiff : 0;
+  }
+
+  // Cuánto hay que cobrar ahora y si se cobra en efectivo
+  get editToCharge(): number {
+    if (!this.editPaid) return 0;
+    if (this.editSameMethod) return this.editDiff > 0 ? this.editDiff : 0;
+    return this.editTotal;
+  }
+
+  private num(v: any): number | null {
+    return v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+  }
+
+  // Lo que entregó el cliente para lo que se cobra ahora
+  get editReceived(): number | null {
+    return this.num(this.editSameMethod ? this.editDiffCash : this.editCash);
+  }
+
+  setEditReceived(v: number) {
+    if (this.editSameMethod) this.editDiffCash = v;
+    else this.editCash = v;
+  }
+
+  get editChange(): number | null {
+    const r = this.editReceived;
+    if (!this.editIsCash || this.editToCharge <= 0 || r === null) return null;
+    return Math.round((r - this.editToCharge) * 100) / 100;
+  }
+
+  // Billetes para elegir rápido (los primeros que alcanzan)
+  get editBills(): number[] {
+    const need = this.editToCharge;
+    return [20, 50, 100, 200, 500, 1000].filter(b => b > need).slice(0, 3);
+  }
+
+  get editMethodName(): string {
+    return this.editMethods.find(m => m.id === this.editMethodId)?.name ?? '';
   }
 
   // Métodos para elegir: los activos y, si el cobro se hizo con uno que ya se desactivó, también ese
@@ -312,9 +368,23 @@ export class OrdersPage {
       this.editError = 'Elige el método de pago';
       return;
     }
-    const cash = this.editCash === null || (this.editCash as any) === '' ? null : Number(this.editCash);
-    if (this.editPaid && this.editIsCash && cash !== null && cash < this.editTotal) {
-      this.editError = 'El efectivo recibido no cubre el nuevo total';
+    if (this.editToCharge > 0 && this.editIsCash) {
+      const r = this.editReceived;
+      if (r === null) {
+        this.editError = `¿Con cuánto te pagó? Escribe el efectivo o elige "Exacto"`;
+        return;
+      }
+      if (r < this.editToCharge) {
+        this.editError = `Con lo que pagó no alcanza: faltan $${(this.editToCharge - r).toFixed(2)}`;
+        return;
+      }
+    }
+    if (this.editToCharge > 0 && !this.editIsCash && this.editSameMethod && !this.editDiffDone) {
+      this.editError = `Confirma que ya cobraste la diferencia de $${this.editToCharge.toFixed(2)}`;
+      return;
+    }
+    if (this.editRefund > 0 && !this.editRefundDone) {
+      this.editError = `Confirma que ya le regresaste $${this.editRefund.toFixed(2)} al cliente`;
       return;
     }
     this.savingEdit = true;
@@ -325,12 +395,18 @@ export class OrdersPage {
         delivery_mode: this.editMode,
         customer_name: this.editCustomer.trim(),
         payment: this.editPaid
-          ? { payment_method_id: this.editMethodId, cash_received: this.editIsCash ? cash ?? this.editTotal : null }
+          ? {
+              payment_method_id: this.editMethodId,
+              cash_received: !this.editSameMethod && this.editIsCash ? this.editReceived : null,
+              difference_received: this.editSameMethod && this.editIsCash && this.editToCharge > 0 ? this.editReceived : null,
+            }
           : null,
         reason: this.editReason.trim() || undefined,
       });
-      const change = r.order?.change_amount;
-      this.ui.success(change ? `Pedido #${this.editing.id} actualizado. Cambio: $${Number(change).toFixed(2)}` : `Pedido #${this.editing.id} actualizado`);
+      const adj = r.edit?.payment_adjustment;
+      const extra = adj?.type === 'refund' || adj?.type === 'removed' ? ` Regresaste $${Number(adj.amount).toFixed(2)}.`
+        : Number(adj?.change) > 0 ? ` Cambio: $${Number(adj.change).toFixed(2)}.` : '';
+      this.ui.success(`Pedido #${this.editing.id} actualizado.${extra}`);
       this.editing = null;
       await Promise.all([this.loadActive(), this.loadHistory()]);
     } catch (e) {
