@@ -37,6 +37,7 @@
             <option value="employee">Empleado</option>
           </select>
           <button class="btn btn-sm" type="button" (click)="toggle(u)" [disabled]="u.id === me">{{ u.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
+          <button class="btn btn-sm btn-danger" type="button" (click)="remove(u)" *ngIf="u.id !== me" aria-label="Eliminar usuario">Eliminar</button>
         </div>
       </div>
       <div class="empty" *ngIf="!loading && !users.length">

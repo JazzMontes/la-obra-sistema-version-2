@@ -297,10 +297,31 @@ create table if not exists la_obra_v2.files (
   created_at timestamp not null default localtimestamp
 );
 
+-- ---------- Reglas de "valor único" (por si la tabla ya existía de una versión anterior sin ellas) ----------
+-- "create table if not exists" no modifica tablas existentes; aquí se agregan si faltan.
+-- Si hubiera datos repetidos no se fuerza nada (no se borra ni cambia ningún dato): solo se avisa.
+do $$
+begin
+  begin
+    create unique index if not exists uq_payment_methods_name on la_obra_v2.payment_methods(name);
+  exception when others then raise notice 'payment_methods: hay nombres repetidos (%); se deja igual.', sqlerrm;
+  end;
+  begin
+    create unique index if not exists uq_users_username on la_obra_v2.users(username);
+  exception when others then raise notice 'users: hay usuarios repetidos (%); se deja igual.', sqlerrm;
+  end;
+  begin
+    create unique index if not exists uq_work_location_id on la_obra_v2.work_location(id);
+  exception when others then raise notice 'work_location: (%); se deja igual.', sqlerrm;
+  end;
+end $$;
+
 -- ---------- Datos iniciales ----------
-insert into la_obra_v2.payment_methods (name, status) values
-  ('Efectivo','active'), ('Transferencia','active'), ('Tarjeta','active')
-on conflict (name) do nothing;
+-- Solo agrega los métodos de pago que falten (no depende de reglas de valor único).
+insert into la_obra_v2.payment_methods (name, status)
+select v.name, 'active'
+from (values ('Efectivo'), ('Transferencia'), ('Tarjeta')) as v(name)
+where not exists (select 1 from la_obra_v2.payment_methods p where lower(p.name) = lower(v.name));
 
 -- ---------- Mejoras (noviembre 2026) ----------
 -- Solo AGREGAN columnas y tablas; no borran ni cambian lo que ya está guardado.
@@ -1047,6 +1068,38 @@ begin
   update la_obra_v2.users set status = v_status, role = v_role, updated_at = localtimestamp where id = v_id;
   return la_obra_v2.ok(200, 'Usuario actualizado correctamente', jsonb_build_object('user', jsonb_build_object(
     'id', u.id, 'name', u.name, 'username', u.username, 'email', u.email, 'status', v_status, 'role', v_role)));
+end $$;
+
+-- users/delete.php (admin elimina una cuenta; si tiene historial, se desactiva para conservarlo)
+create or replace function la_obra_v2.ep_users__delete(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare me la_obra_v2.users; u la_obra_v2.users; v_id int;
+begin
+  perform la_obra_v2.method(m, 'DELETE');
+  me := la_obra_v2.auth_long(t, true, 'No tienes permisos para eliminar usuarios');
+  v_id := la_obra_v2.positive_id(coalesce(la_obra_v2.body(b) -> 'id', q -> 'id'), 'El id del usuario no es válido');
+  select * into u from la_obra_v2.users where id = v_id for update;
+  if u.id is null then perform la_obra_v2.fail(404, 'Usuario no encontrado'); end if;
+  if u.id = me.id then perform la_obra_v2.fail(422, 'No puedes eliminar tu propia cuenta'); end if;
+  if u.role = 'admin' and u.status = 'active'
+     and not exists(select 1 from la_obra_v2.users where role = 'admin' and status = 'active' and id <> v_id) then
+    perform la_obra_v2.fail(422, 'El sistema debe conservar al menos un administrador activo');
+  end if;
+  begin
+    -- Las asistencias se borrarían junto con la cuenta: se tratan como historial a conservar.
+    if exists(select 1 from la_obra_v2.attendance where user_id = v_id) then
+      raise foreign_key_violation;
+    end if;
+    delete from la_obra_v2.users where id = v_id;
+    if u.avatar_path is not null then delete from la_obra_v2.files where path = u.avatar_path; end if;
+    return la_obra_v2.ok(200, 'Usuario eliminado', jsonb_build_object('deleted', true, 'deactivated', false));
+  exception when foreign_key_violation then
+    -- Tiene ventas, compras, asistencias u otros registros: se conserva el historial y se bloquea el acceso.
+    update la_obra_v2.users set status = 'inactive', updated_at = localtimestamp where id = v_id;
+    delete from la_obra_v2.sessions where user_id = v_id;
+    return la_obra_v2.ok(200, u.name || ' tiene movimientos registrados (ventas, compras, asistencias…). Para no perder ese historial, la cuenta se desactivó en lugar de borrarse.',
+      jsonb_build_object('deleted', false, 'deactivated', true));
+  end;
 end $$;
 
 -- users/employee-status.php

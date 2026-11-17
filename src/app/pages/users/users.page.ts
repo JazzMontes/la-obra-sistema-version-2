@@ -107,6 +107,26 @@ export class UsersPage {
     }
   }
 
+  // Elimina la cuenta. Si tiene ventas, compras, asistencias u otros registros,
+  // la base la desactiva en lugar de borrarla para conservar el historial.
+  async remove(u: any) {
+    const ok = await this.ui.confirm(
+      'Eliminar usuario',
+      `¿Eliminar la cuenta de ${u.name} (${u.username})? Si tiene ventas u otros movimientos registrados, solo se desactivará para conservar ese historial.`,
+      'Eliminar',
+      true
+    );
+    if (!ok) return;
+    try {
+      const r: any = await this.api.delete('users/delete.php', { id: u.id });
+      if (r?.deactivated) this.ui.info(r.message);
+      else this.ui.success(r?.message || 'Usuario eliminado');
+      await this.load();
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudo eliminar el usuario'));
+    }
+  }
+
   async changeRole(u: any, role: string) {
     if (role === u.role) return;
     try {
