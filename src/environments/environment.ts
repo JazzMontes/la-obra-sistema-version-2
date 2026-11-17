@@ -3,7 +3,7 @@
 
 export const environment = {
   production: false,
-  supabaseUrl: 'https://kkltwnqsdrgyxyofnsul.supabase.co',
-  supabaseKey: 'sb_publishable_gpW7NTQ79RfiaNwHzQ994A_4O15ogZx',
+  supabaseUrl: 'https://umwmwrkxrtbgwpxuodyx.supabase.co',
+  supabaseKey: 'sb_publishable_JSWeeJ0DVBDpE6NEuAPNXg_Uq-5TSmq',
   controlEscolarUrl: 'http://192.168.1.158/control_escolar_api/api/integration/validar-alumno.php',
 };
