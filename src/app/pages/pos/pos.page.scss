@@ -118,6 +118,53 @@
   }
 }
 
+.tap-zones {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 6px;
+  pointer-events: none;
+
+  .zone {
+    width: 32px;
+    height: 32px;
+    border-radius: 99px;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--ink);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    opacity: 0;
+    transform: scale(0.85);
+    transition: opacity 0.15s, transform 0.15s;
+
+    app-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    &.disabled {
+      visibility: hidden;
+    }
+  }
+}
+
+.tile:hover .tap-zones .zone,
+.tile.in-cart .tap-zones .zone {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.tile.in-cart .tap-zones .zone.plus {
+  background: var(--ink);
+  color: #fff;
+}
+
+.tap-hint {
+  margin: 12px 2px 0;
+}
+
 .qty-badge {
   position: absolute;
   top: 8px;

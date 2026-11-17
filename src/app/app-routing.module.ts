@@ -19,6 +19,7 @@ const routes: Routes = [
   page('home', () => import('./home/home.module').then(m => m.HomePageModule)),
   page('pos', () => import('./pages/pos/pos.module').then(m => m.PosPageModule)),
   page('orders', () => import('./pages/orders/orders.module').then(m => m.OrdersPageModule)),
+  page('cash-cut', () => import('./pages/cash-cut/cash-cut.module').then(m => m.CashCutPageModule)),
   page('inventory', () => import('./pages/inventory/inventory.module').then(m => m.InventoryPageModule)),
   page('waste', () => import('./pages/waste/waste.module').then(m => m.WastePageModule)),
   page('expenses', () => import('./pages/expenses/expenses.module').then(m => m.ExpensesPageModule)),
@@ -39,6 +40,7 @@ const routes: Routes = [
   // Rutas anteriores
   { path: 'sales', redirectTo: 'pos', pathMatch: 'full' },
   { path: 'recipes', redirectTo: 'products', pathMatch: 'full' },
+  { path: 'corte', redirectTo: 'cash-cut', pathMatch: 'full' },
 
   // La app siempre abre en el inicio de sesión
   { path: '', redirectTo: 'login', pathMatch: 'full' },

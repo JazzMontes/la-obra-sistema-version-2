@@ -4,6 +4,8 @@ import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
+import { Auth } from '../../services/auth';
+import { CashFund, CashFundService } from '../../services/cash-fund';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
 
@@ -42,10 +44,69 @@ export class PosPage {
   paying = false;
   result: any = null;
 
-  constructor(private api: ApiService, private ui: UiService, private router: Router) {}
+  // Fondo de caja del día (se pide antes de la primera venta)
+  fund: CashFund | null = null;
+  fundChecked = false;
+  fundOpen = false;
+  fundAmount: number | null = null;
+  fundError = '';
+  savingFund = false;
+
+  constructor(
+    private api: ApiService,
+    private ui: UiService,
+    private router: Router,
+    private auth: Auth,
+    private funds: CashFundService
+  ) {}
 
   ionViewWillEnter() {
     this.load();
+    this.checkFund();
+  }
+
+  // ---------- Fondo de caja ----------
+
+  async checkFund() {
+    try {
+      this.fund = await this.funds.get();
+    } catch {
+      this.fund = null;
+    }
+    this.fundChecked = true;
+    if (!this.fund) this.askFund();
+  }
+
+  askFund() {
+    this.fundAmount = this.fund ? this.fund.amount : null;
+    this.fundError = '';
+    this.fundOpen = true;
+  }
+
+  async saveFund() {
+    if (this.savingFund) return;
+    const v = this.fundAmount;
+    if (v === null || (v as any) === '' || !Number.isFinite(Number(v)) || Number(v) < 0) {
+      this.fundError = 'Escribe el efectivo con el que abres la caja (puede ser 0)';
+      return;
+    }
+    this.savingFund = true;
+    try {
+      this.fund = await this.funds.set(Number(v), undefined, this.auth.getStoredUser()?.name);
+      this.fundOpen = false;
+      this.ui.success('Fondo de caja registrado');
+    } catch (e) {
+      this.fundError = errorMessage(e, 'No se pudo guardar el fondo');
+    } finally {
+      this.savingFund = false;
+    }
+  }
+
+  // Sin fondo del día no se puede vender: se vuelve a pedir
+  private needFund(): boolean {
+    if (this.fund) return false;
+    this.askFund();
+    return true;
   }
 
   async load() {
@@ -81,7 +142,24 @@ export class PosPage {
     return this.cart.find(l => l.product.id === p.id)?.quantity ?? 0;
   }
 
+  // Toque en la tarjeta: mitad derecha suma, mitad izquierda resta (nunca baja de 0)
+  tap(p: any, ev: MouseEvent) {
+    const el = ev.currentTarget as HTMLElement | null;
+    // Teclado (Enter / espacio): siempre suma
+    if (!el || ev.detail === 0) return this.add(p);
+    const r = el.getBoundingClientRect();
+    if (ev.clientX - r.left < r.width / 2) this.remove(p);
+    else this.add(p);
+  }
+
+  remove(p: any) {
+    const line = this.cart.find(l => l.product.id === p.id);
+    if (!line) return;
+    this.change(line, -1);
+  }
+
   add(p: any) {
+    if (this.needFund()) return;
     if (!p.is_available) {
       this.ui.info(`${p.name} no está disponible hoy`);
       return;
@@ -92,7 +170,7 @@ export class PosPage {
   }
 
   change(line: CartLine, delta: number) {
-    line.quantity += delta;
+    line.quantity = Math.max(0, line.quantity + delta);
     if (line.quantity <= 0) this.cart = this.cart.filter(l => l !== line);
   }
 
@@ -146,6 +224,7 @@ export class PosPage {
 
   openPay() {
     if (!this.cart.length) return;
+    if (this.needFund()) return;
     this.cartOpen = false;
     this.payLater = false;
     this.methodId = this.methods.find(m => m.name.trim().toLowerCase() === 'efectivo')?.id ?? this.methods[0]?.id ?? null;

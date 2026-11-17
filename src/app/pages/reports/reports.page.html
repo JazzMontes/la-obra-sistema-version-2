@@ -12,7 +12,7 @@
   <div class="page">
     <div class="page-intro">
       <div>
-        <h1>Reportes y corte</h1>
+        <h1>Reportes</h1>
         <p *ngIf="report">Del {{ report.from | dateMx }} al {{ report.to | dateMx }}</p>
       </div>
       <div class="segmented">
@@ -86,25 +86,12 @@
           </div>
         </section>
 
-        <!-- Corte de caja -->
+        <!-- El corte de caja está en Ventas y caja → Corte de caja -->
         <section class="card cut">
-          <div class="card-head"><h3>Corte de caja</h3><span class="small muted">Efectivo</span></div>
+          <div class="card-head"><h3>Corte de caja</h3></div>
           <div class="card-pad">
-            <div class="cut-line"><span>Ventas en efectivo</span><span class="num">{{ report.cash_cut.cash_sales | money }}</span></div>
-            <div class="cut-line"><span>Compras pagadas en efectivo</span><span class="num">−{{ report.cash_cut.cash_purchases | money }}</span></div>
-            <div class="cut-line"><span>Gastos y salidas</span><span class="num">−{{ report.cash_cut.expenses | money }}</span></div>
-            <div class="cut-line total"><span>Efectivo esperado</span><strong class="num">{{ report.cash_cut.expected_cash | money }}</strong></div>
-            <div class="field counted">
-              <label for="r-count">Efectivo contado en caja</label>
-              <div class="input-group">
-                <span class="addon">$</span>
-                <input id="r-count" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="counted" />
-              </div>
-            </div>
-            <div class="diff" *ngIf="cashDifference !== null" [class.ok]="cashDifference === 0" [class.over]="cashDifference > 0" [class.short]="cashDifference < 0">
-              {{ cashDifference === 0 ? 'La caja cuadra' : cashDifference > 0 ? 'Sobran' : 'Faltan' }}
-              <strong class="num" *ngIf="cashDifference !== 0">{{ (cashDifference < 0 ? -cashDifference : cashDifference) | money }}</strong>
-            </div>
+            <p class="small muted">El corte ahora es parte de la operación: fondo, ventas por método de pago, gastos y efectivo contado.</p>
+            <a class="btn btn-block" routerLink="/cash-cut"><app-icon name="cash"></app-icon>Ir al corte de caja</a>
           </div>
         </section>
       </div>

@@ -1,0 +1,112 @@
+.date-field {
+  width: 170px;
+}
+
+.gap {
+  margin-bottom: 12px;
+}
+
+.card + .card {
+  margin-top: 12px;
+}
+
+.cut-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  font-size: 14.5px;
+  border-bottom: 1px dashed var(--border);
+
+  > span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  app-icon {
+    width: 18px;
+    height: 18px;
+    color: var(--muted);
+  }
+
+  &.cash {
+    font-weight: 650;
+  }
+
+  &.sub {
+    font-weight: 650;
+  }
+
+  &.total {
+    border-bottom: 0;
+    padding-top: 12px;
+    font-size: 16px;
+  }
+}
+
+.note {
+  margin: 8px 0 0;
+}
+
+.counted {
+  margin-top: 16px;
+
+  .big {
+    font-size: 20px;
+    font-weight: 700;
+  }
+}
+
+.diff {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 650;
+  font-size: 15px;
+
+  &.ok {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  &.over {
+    background: var(--warning-soft, #fff4e0);
+    color: var(--warning, #a15c00);
+  }
+
+  &.short {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+}
+
+.device-note {
+  margin: 14px 2px 0;
+}
+
+@media print {
+  .notice .btn,
+  .link,
+  .counted input::placeholder {
+    display: none !important;
+  }
+}
+
+.notes {
+  margin-top: 12px;
+}
+
+.save-cut {
+  margin-top: 12px;
+}
+
+@media print {
+  .save-cut,
+  .notes {
+    display: none !important;
+  }
+}

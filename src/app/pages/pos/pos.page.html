@@ -3,7 +3,9 @@
     <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
     <ion-title>Punto de venta</ion-title>
     <ion-buttons slot="end">
+      <button class="btn btn-sm" type="button" *ngIf="fund" (click)="askFund()" title="Fondo de caja"><app-icon name="cash"></app-icon><span class="desktop-only">Fondo {{ fund.amount | money }}</span></button>
       <a class="btn btn-sm" routerLink="/orders"><app-icon name="orders"></app-icon><span class="desktop-only">Pedidos</span></a>
+      <a class="btn btn-sm" routerLink="/cash-cut"><app-icon name="receipt"></app-icon><span class="desktop-only">Corte</span></a>
     </ion-buttons>
   </ion-toolbar>
 </ion-header>
@@ -28,14 +30,20 @@
           type="button"
           class="tile"
           *ngFor="let p of visible"
-          (click)="add(p)"
+          (click)="tap(p, $event)"
           [class.off]="!p.is_available"
           [class.in-cart]="qtyInCart(p) > 0"
+          [attr.aria-label]="p.name + (qtyInCart(p) ? ', ' + qtyInCart(p) + ' en el pedido. Toca la derecha para sumar, la izquierda para restar' : '')"
         >
           <div class="tile-photo">
             <img *ngIf="imageUrl(p)" [apiSrc]="p.image_path" [alt]="p.name" (error)="p._imgError = true" />
             <span *ngIf="!imageUrl(p)" class="initial">{{ p.name.charAt(0) }}</span>
             <span class="qty-badge" *ngIf="qtyInCart(p) > 0">{{ qtyInCart(p) }}</span>
+            <!-- Zonas: izquierda resta, derecha suma -->
+            <span class="tap-zones" aria-hidden="true">
+              <span class="zone minus" [class.disabled]="!qtyInCart(p)"><app-icon name="minus"></app-icon></span>
+              <span class="zone plus"><app-icon name="plus"></app-icon></span>
+            </span>
           </div>
           <div class="tile-info">
             <span class="tile-name">{{ p.name }}</span>
@@ -46,6 +54,7 @@
       <div class="tiles" *ngIf="loading">
         <div class="tile skeleton-tile" *ngFor="let i of [1, 2, 3, 4, 5, 6]"></div>
       </div>
+      <p class="tap-hint small muted" *ngIf="!loading && visible.length">Toca el lado derecho de un producto para sumar y el izquierdo para restar.</p>
       <div class="empty" *ngIf="!loading && !visible.length">
         <app-icon name="products"></app-icon>
         <h3>Sin productos</h3>
@@ -210,6 +219,39 @@
           </button>
         </div>
       </ng-template>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Fondo de caja: se pide antes de la primera venta del día -->
+<ion-modal class="sheet sheet-small" [isOpen]="fundOpen" (didDismiss)="fundOpen = false" [backdropDismiss]="!!fund && !savingFund">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ fund ? 'Fondo de caja' : 'Abrir caja' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" *ngIf="fund" (click)="fundOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <p class="muted" *ngIf="!fund">Antes de la primera venta del día, cuenta el efectivo con el que abres la caja (el cambio).</p>
+        <p class="muted" *ngIf="fund">Registrado {{ fund.user_name ? 'por ' + fund.user_name : '' }}. Corrígelo si te equivocaste al contarlo.</p>
+        <div class="field">
+          <label for="fund">Fondo inicial en efectivo</label>
+          <div class="input-group">
+            <span class="addon">$</span>
+            <input id="fund" class="input cash-input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="fundAmount" (keyup.enter)="saveFund()" />
+          </div>
+          <div class="quick">
+            <button type="button" *ngFor="let v of [0, 200, 500, 1000, 1500]" (click)="fundAmount = v">{{ v | money }}</button>
+          </div>
+        </div>
+        <div class="form-error" *ngIf="fundError">{{ fundError }}</div>
+      </div>
+      <div class="modal-foot">
+        <a class="btn" routerLink="/home" *ngIf="!fund" (click)="fundOpen = false">Ahora no</a>
+        <button class="btn btn-primary btn-lg grow" type="button" (click)="saveFund()" [disabled]="savingFund">
+          {{ savingFund ? 'Guardando…' : fund ? 'Guardar' : 'Abrir caja' }}
+        </button>
+      </div>
     </div>
   </ng-template>
 </ion-modal>

@@ -26,8 +26,9 @@ export class HomePage {
     { n: 3, title: 'Preparaciones', text: 'Lo que produces y su rendimiento', url: '/preparations', icon: 'preparations' },
     { n: 4, title: 'Productos y recetas', text: 'Qué lleva cada producto', url: '/products', icon: 'products' },
     { n: 5, title: 'Costos', text: 'Costo contra precio de venta', url: '/costs', icon: 'costs' },
-    { n: 6, title: 'Punto de venta', text: 'Al entregar se descuenta inventario', url: '/pos', icon: 'pos' },
-    { n: 7, title: 'Inventario y reportes', text: 'Existencias, mermas y corte', url: '/inventory', icon: 'inventory' },
+    { n: 6, title: 'Punto de venta', text: 'Abre con fondo; al entregar se descuenta inventario', url: '/pos', icon: 'pos' },
+    { n: 7, title: 'Corte de caja', text: 'Fondo + efectivo − gastos = lo que hay en caja', url: '/cash-cut', icon: 'cash' },
+    { n: 8, title: 'Inventario y reportes', text: 'Existencias, mermas y resultados', url: '/inventory', icon: 'inventory' },
   ];
 
   constructor(private api: ApiService, private auth: Auth) {}

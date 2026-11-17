@@ -1,4 +1,5 @@
-// Reportes de un periodo: ventas, utilidad, compras, gastos, mermas y corte de caja.
+// Reportes de un periodo: ventas, utilidad, compras, gastos y mermas.
+// (El corte de caja está en pages/cash-cut, junto con Punto de venta y Pedidos.)
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
@@ -25,7 +26,6 @@ export class ReportsPage {
   to = todayIso();
   report: any = null;
   loading = true;
-  counted: number | null = null;
 
   constructor(private api: ApiService, private ui: UiService) {}
 
@@ -52,7 +52,6 @@ export class ReportsPage {
     this.loading = true;
     try {
       this.report = (await this.api.get('reports/summary.php', { from: this.from, to: this.to })).report;
-      this.counted = null;
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudo generar el reporte'));
     } finally {
@@ -79,11 +78,6 @@ export class ReportsPage {
   dayLabel(d: string): string {
     const date = parseServerDate(d);
     return date ? new Intl.DateTimeFormat('es-MX', { weekday: 'short', day: 'numeric' }).format(date) : d;
-  }
-
-  get cashDifference(): number | null {
-    if (this.counted === null || (this.counted as any) === '' || !this.report) return null;
-    return Math.round((Number(this.counted) - this.report.cash_cut.expected_cash) * 100) / 100;
   }
 
   get netResult(): number {

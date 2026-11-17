@@ -15,15 +15,22 @@ interface NavGroup { title: string; items: NavItem[]; }
 const NAV: NavGroup[] = [
   { title: '', items: [{ label: 'Inicio', icon: 'home', url: '/home' }] },
   {
+    // Operación del empleado: vender, entregar pedidos y cortar caja
+    title: 'Ventas y caja',
+    items: [
+      { label: 'Punto de venta', icon: 'pos', url: '/pos' },
+      { label: 'Pedidos', icon: 'orders', url: '/orders' },
+      { label: 'Corte de caja', icon: 'cash', url: '/cash-cut' },
+    ],
+  },
+  {
     title: 'Operación',
     items: [
       { label: 'Asistencia', icon: 'pin', url: '/attendance' },
-      { label: 'Punto de venta', icon: 'pos', url: '/pos' },
-      { label: 'Pedidos', icon: 'orders', url: '/orders' },
-      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true },
-      { label: 'Inventario', icon: 'inventory', url: '/inventory' },
-      { label: 'Mermas', icon: 'waste', url: '/waste' },
       { label: 'Gastos', icon: 'expenses', url: '/expenses' },
+      { label: 'Mermas', icon: 'waste', url: '/waste' },
+      { label: 'Inventario', icon: 'inventory', url: '/inventory' },
+      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true },
     ],
   },
   {
@@ -39,7 +46,7 @@ const NAV: NavGroup[] = [
     title: 'Análisis',
     items: [
       { label: 'Costos', icon: 'costs', url: '/costs', admin: true },
-      { label: 'Reportes y corte', icon: 'reports', url: '/reports', admin: true },
+      { label: 'Reportes', icon: 'reports', url: '/reports', admin: true },
     ],
   },
   {

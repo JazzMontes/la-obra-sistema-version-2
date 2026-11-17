@@ -1,7 +1,7 @@
 // Mapa de calles (como Google Maps) para la asistencia: muestra el negocio con su radio
 // permitido y, si hay lectura del GPS, tu ubicación con su margen de error.
-// Usa los mosaicos libres de OpenStreetMap (sin clave ni costo) y se dibuja sin librerías.
-// Se puede mover arrastrando, acercar con + / − o doble clic, y volver a centrar.
+// Usa los mosaicos libres de CARTO (estilo Voyager, datos de OpenStreetMap; sin clave ni costo)
+// y se dibuja sin librerías. Se mueve arrastrando; se acerca con + / −, doble clic, rueda o pellizco.
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -23,6 +23,7 @@ export interface MapPoint {
 interface Tile {
   key: string;
   url: string;
+  fallback: string;
   x: number;
   y: number;
 }
@@ -56,87 +57,144 @@ function metersPerPixel(lat: number, z: number): number {
       (pointermove)="move($event)"
       (pointerup)="up($event)"
       (pointercancel)="up($event)"
+      (wheel)="wheel($event)"
       (dblclick)="zoomBy(1)"
       role="img"
       [attr.aria-label]="ariaLabel"
     >
       <div class="tiles">
-        <img *ngFor="let t of tiles; trackBy: tileKey" [src]="t.url" [style.left.px]="t.x" [style.top.px]="t.y" alt="" draggable="false" loading="lazy" (error)="tileError()" />
+        <img
+          *ngFor="let t of tiles; trackBy: tileKey"
+          [src]="t.url"
+          [style.left.px]="t.x"
+          [style.top.px]="t.y"
+          alt=""
+          draggable="false"
+          (load)="$any($event.target).classList.add('ready')"
+          (error)="tileError($event, t)"
+        />
       </div>
       <svg class="overlay" [attr.width]="w" [attr.height]="h" aria-hidden="true">
         <circle *ngIf="shop && radius" [attr.cx]="shop.x" [attr.cy]="shop.y" [attr.r]="fencePx" class="fence" [class.ok]="inside === true" [class.out]="inside === false" />
         <line *ngIf="shop && mePx" [attr.x1]="shop.x" [attr.y1]="shop.y" [attr.x2]="mePx.x" [attr.y2]="mePx.y" class="link" />
-        <circle *ngIf="mePx && accPx > 6" [attr.cx]="mePx.x" [attr.cy]="mePx.y" [attr.r]="accPx" class="acc" />
+        <circle *ngIf="mePx && accPx > 10" [attr.cx]="mePx.x" [attr.cy]="mePx.y" [attr.r]="accPx" class="acc" />
       </svg>
+      <div class="pin-me" *ngIf="mePx" [style.left.px]="mePx.x" [style.top.px]="mePx.y"><i></i><span></span></div>
       <div class="pin-shop" *ngIf="shop" [style.left.px]="shop.x" [style.top.px]="shop.y">
-        <svg viewBox="0 0 24 32" width="30" height="40" aria-hidden="true">
-          <path d="M12 31s-10-9.2-10-17a10 10 0 0 1 20 0c0 7.8-10 17-10 17z" class="pin-body" />
-          <circle cx="12" cy="13" r="4" fill="#fff" />
-        </svg>
         <span class="pin-label" *ngIf="label">{{ label }}</span>
+        <svg viewBox="0 0 28 38" width="30" height="41" aria-hidden="true">
+          <path d="M14 37c-1.2-3.6-3.2-6.6-5.6-9.4C5 23.7 2 20.4 2 14.5A12 12 0 0 1 26 14.5c0 5.9-3 9.2-6.4 13.1-2.4 2.8-4.4 5.8-5.6 9.4z" class="pin-body" />
+          <circle cx="14" cy="14.5" r="4.6" class="pin-hole" />
+        </svg>
+        <span class="pin-shadow"></span>
       </div>
-      <div class="pin-me" *ngIf="mePx" [style.left.px]="mePx.x" [style.top.px]="mePx.y"><span></span></div>
 
-      <div class="controls">
-        <button type="button" (click)="zoomBy(1)" aria-label="Acercar" [disabled]="z >= maxZ">+</button>
-        <button type="button" (click)="zoomBy(-1)" aria-label="Alejar" [disabled]="z <= minZ">−</button>
-        <button type="button" (click)="recenter()" aria-label="Centrar" class="center-btn" [class.active]="!userMoved">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+      <div class="zoom">
+        <button type="button" (click)="zoomBy(1)" aria-label="Acercar" [disabled]="z >= maxZ">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <span class="sep"></span>
+        <button type="button" (click)="zoomBy(-1)" aria-label="Alejar" [disabled]="z <= minZ">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14"/></svg>
         </button>
       </div>
+      <button type="button" class="center-btn" (click)="recenter()" aria-label="Centrar" [class.active]="!userMoved">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.4" class="dot"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg>
+      </button>
       <div class="scale" *ngIf="scaleBar">
         <span [style.width.px]="scaleBar.px"></span>{{ scaleBar.label }}
       </div>
       <div class="offline" *ngIf="tilesFailed">Sin internet: el mapa no se pudo cargar</div>
-      <a class="attrib" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
+      <div class="attrib">
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
+        <ng-container *ngIf="!useOsm"> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></ng-container>
+      </div>
     </div>
   `,
   styles: [`
     :host { display: block; }
     .map {
-      position: relative; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--border);
-      background: #e9e5dc; touch-action: none; user-select: none; cursor: grab;
+      position: relative; overflow: hidden; border-radius: 16px;
+      background: #f2efe9; touch-action: none; user-select: none; cursor: grab;
+      box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 6px 18px -8px rgba(0,0,0,.25);
+      isolation: isolate;
     }
     .map:active { cursor: grabbing; }
-    .tiles img { position: absolute; width: 256px; height: 256px; max-width: none; pointer-events: none; }
-    .overlay { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-    .fence { fill: rgba(36, 87, 197, 0.12); stroke: #2457c5; stroke-width: 2; }
-    .fence.ok { fill: rgba(23, 131, 74, 0.14); stroke: var(--success); }
-    .fence.out { fill: rgba(201, 52, 52, 0.10); stroke: var(--danger); }
-    .link { stroke: #1a1a1a; stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.55; }
-    .acc { fill: rgba(66, 133, 244, 0.18); stroke: rgba(66, 133, 244, 0.5); stroke-width: 1; }
-    .pin-shop { position: absolute; transform: translate(-50%, -100%); pointer-events: none; display: flex; flex-direction: column; align-items: center; }
-    .pin-shop svg { filter: drop-shadow(0 2px 2px rgba(0,0,0,.35)); order: 2; }
-    .pin-body { fill: #ea4335; stroke: #a52714; stroke-width: 1; }
-    .pin-label {
-      order: 1; margin-bottom: 2px; padding: 2px 8px; border-radius: 999px; background: #fff; color: #1a1a1a;
-      font: 600 12px/1.4 var(--font); box-shadow: 0 1px 3px rgba(0,0,0,.3); white-space: nowrap;
+    .tiles img {
+      position: absolute; width: 256px; height: 256px; max-width: none; pointer-events: none;
+      opacity: 0; transition: opacity .25s ease;
     }
-    .pin-me { position: absolute; width: 0; height: 0; pointer-events: none; }
+    .tiles img.ready { opacity: 1; }
+    .overlay { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+    .fence { fill: rgba(26, 115, 232, 0.10); stroke: #1a73e8; stroke-width: 2; stroke-opacity: .8; }
+    .fence.ok { fill: rgba(30, 142, 62, 0.12); stroke: #1e8e3e; }
+    .fence.out { fill: rgba(217, 48, 37, 0.08); stroke: #d93025; stroke-dasharray: 6 5; }
+    .link { stroke: #3c4043; stroke-width: 2; stroke-dasharray: 2 6; stroke-linecap: round; opacity: .6; }
+    .acc { fill: rgba(26, 115, 232, 0.14); stroke: rgba(26, 115, 232, 0.35); stroke-width: 1; }
+
+    .pin-shop {
+      position: absolute; transform: translate(-50%, -100%); pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; z-index: 2;
+    }
+    .pin-shop svg { filter: drop-shadow(0 3px 3px rgba(0,0,0,.3)); display: block; }
+    .pin-body { fill: #ea4335; stroke: #b31412; stroke-width: 1; }
+    .pin-hole { fill: #b31412; }
+    .pin-shadow {
+      position: absolute; bottom: -3px; width: 14px; height: 5px; border-radius: 50%;
+      background: rgba(0,0,0,.25); filter: blur(1.5px); z-index: -1;
+    }
+    .pin-label {
+      margin-bottom: 6px; padding: 5px 10px; border-radius: 10px; background: #fff; color: #202124;
+      font: 600 12.5px/1.2 var(--font); box-shadow: 0 2px 6px rgba(60,64,67,.3); white-space: nowrap;
+      max-width: 220px; overflow: hidden; text-overflow: ellipsis; position: relative;
+    }
+    .pin-label::after {
+      content: ''; position: absolute; left: 50%; bottom: -5px; width: 10px; height: 10px; background: #fff;
+      transform: translateX(-50%) rotate(45deg); box-shadow: 2px 2px 3px rgba(60,64,67,.15);
+    }
+
+    .pin-me { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 1; }
     .pin-me span {
       position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
-      background: #4285f4; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+      background: #1a73e8; border: 3px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.35); box-sizing: border-box;
     }
-    .controls { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; gap: 6px; }
-    .controls button {
-      width: 34px; height: 34px; border-radius: 8px; border: 0; background: #fff; color: #333; cursor: pointer;
-      font: 600 20px/1 var(--font); box-shadow: 0 1px 4px rgba(0,0,0,.3); display: grid; place-items: center; padding: 0;
+    .pin-me i {
+      position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(26,115,232,.35); animation: pulse 2s ease-out infinite;
     }
-    .controls button:disabled { opacity: .45; cursor: default; }
-    .controls svg { fill: none; stroke: currentColor; stroke-width: 2; }
-    .controls .center-btn.active { color: #1a73e8; }
+    @keyframes pulse { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3.2); opacity: 0; } }
+
+    .zoom, .center-btn {
+      position: absolute; right: 10px; background: #fff; border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(60,64,67,.3), 0 1px 1px rgba(60,64,67,.1); z-index: 3;
+    }
+    .zoom { top: 10px; display: flex; flex-direction: column; overflow: hidden; }
+    .zoom .sep { height: 1px; margin: 0 7px; background: #e0e0e0; }
+    .zoom button, .center-btn {
+      width: 38px; height: 38px; border: 0; background: #fff; color: #5f6368; cursor: pointer;
+      display: grid; place-items: center; padding: 0;
+    }
+    .zoom button:hover:not(:disabled), .center-btn:hover { color: #202124; background: #f6f6f6; }
+    .zoom button:disabled { opacity: .35; cursor: default; }
+    .center-btn { bottom: 26px; }
+    svg path, .center-btn circle { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+    .center-btn .dot { fill: currentColor; stroke: none; }
+    .center-btn.active { color: #1a73e8; }
+
     .scale {
-      position: absolute; left: 10px; bottom: 8px; display: flex; align-items: center; gap: 6px;
-      font: 600 11px/1 var(--font); color: #333; text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+      position: absolute; left: 10px; bottom: 8px; display: flex; align-items: center; gap: 6px; z-index: 3;
+      padding: 3px 7px; border-radius: 6px; background: rgba(255,255,255,.85);
+      font: 600 11px/1 var(--font); color: #3c4043;
     }
-    .scale span { display: block; height: 6px; border: 2px solid #333; border-top: 0; }
+    .scale span { display: block; height: 5px; border: 2px solid #3c4043; border-top: 0; }
     .attrib {
-      position: absolute; right: 0; bottom: 0; padding: 1px 6px; background: rgba(255,255,255,.8);
-      font: 10px/1.4 var(--font); color: #333; text-decoration: none;
+      position: absolute; right: 0; bottom: 0; padding: 2px 7px; background: rgba(255,255,255,.8);
+      border-top-left-radius: 6px; font: 10px/1.4 var(--font); color: #5f6368; z-index: 3;
     }
+    .attrib a { color: inherit; text-decoration: none; }
     .offline {
-      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 6px 12px; border-radius: 8px;
-      background: rgba(255,255,255,.9); font: 13px var(--font); color: var(--muted);
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 8px 14px; border-radius: 10px;
+      background: rgba(255,255,255,.95); font: 13px var(--font); color: var(--muted); box-shadow: 0 1px 4px rgba(0,0,0,.2); z-index: 4;
     }
   `],
   standalone: false,
@@ -174,6 +232,11 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   accPx = 0;
   scaleBar: { px: number; label: string } | null = null;
   tilesFailed = false;
+  useOsm = false;
+  private cartoErrors = 0;
+  private wheelAcc = 0;
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinchStart = 0;
 
   private resize?: ResizeObserver;
   private drag: { id: number; x: number; y: number } | null = null;
@@ -217,8 +280,42 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     return t.key;
   }
 
-  tileError() {
-    if (typeof navigator !== 'undefined' && !navigator.onLine) this.tilesFailed = true;
+  // Mosaicos "Voyager" de CARTO (estilo limpio, parecido a Google Maps) en alta resolución.
+  // Si CARTO no responde, se usan los de OpenStreetMap.
+  private tileUrl(z: number, x: number, y: number): string {
+    if (this.useOsm) return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+    const sub = 'abcd'[(x + y) % 4];
+    const retina = typeof window !== 'undefined' && window.devicePixelRatio > 1 ? '@2x' : '';
+    return `https://${sub}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${retina}.png`;
+  }
+
+  tileError(e: Event, t: Tile) {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      this.tilesFailed = true;
+      return;
+    }
+    this.cartoErrors++;
+    if (!this.useOsm && this.cartoErrors >= 3) {
+      this.useOsm = true;
+      this.update();
+      this.render.schedule();
+      return;
+    }
+    const img = e.target as HTMLImageElement;
+    if (!img.dataset['fallback']) {
+      img.dataset['fallback'] = '1';
+      img.src = t.fallback;
+    }
+  }
+
+  // Ctrl + rueda del ratón, o pellizco en el touchpad (la rueda sola sigue moviendo la página)
+  wheel(e: WheelEvent) {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    this.wheelAcc += e.deltaY;
+    if (Math.abs(this.wheelAcc) < 60) return;
+    this.zoomBy(this.wheelAcc < 0 ? 1 : -1);
+    this.wheelAcc = 0;
   }
 
   // ---------- Vista ----------
@@ -281,7 +378,8 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
         const wx = ((tx % n) + n) % n;
         tiles.push({
           key: `${z}/${tx}/${ty}`,
-          url: `https://tile.openstreetmap.org/${z}/${wx}/${ty}.png`,
+          url: this.tileUrl(z, wx, ty),
+          fallback: `https://tile.openstreetmap.org/${z}/${wx}/${ty}.png`,
           x: Math.round(tx * TILE - left),
           y: Math.round(ty * TILE - top),
         });
@@ -325,6 +423,12 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   down(e: PointerEvent) {
     if ((e.target as HTMLElement)?.closest('button, a')) return;
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pointers.size === 2) {
+      this.pinchStart = this.pinchDistance();
+      this.drag = null;
+      return;
+    }
     this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -334,6 +438,19 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   move(e: PointerEvent) {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // Pellizcar con dos dedos: acercar / alejar
+    if (this.pointers.size === 2 && this.pinchStart) {
+      const d = this.pinchDistance();
+      if (d / this.pinchStart > 1.35) {
+        this.zoomBy(1);
+        this.pinchStart = d;
+      } else if (d / this.pinchStart < 0.74) {
+        this.zoomBy(-1);
+        this.pinchStart = d;
+      }
+      return;
+    }
     if (!this.drag || this.drag.id !== e.pointerId) return;
     const dx = e.clientX - this.drag.x;
     const dy = e.clientY - this.drag.y;
@@ -348,6 +465,13 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   up(e: PointerEvent) {
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchStart = 0;
     if (this.drag?.id === e.pointerId) this.drag = null;
+  }
+
+  private pinchDistance(): number {
+    const [a, b] = [...this.pointers.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
   }
 }

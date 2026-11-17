@@ -1,0 +1,167 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Corte de caja</ion-title>
+    <ion-buttons slot="end">
+      <a class="btn btn-sm" routerLink="/pos"><app-icon name="pos"></app-icon><span class="desktop-only">Punto de venta</span></a>
+      <button class="btn btn-sm" type="button" (click)="print()" [disabled]="loading"><app-icon name="receipt"></app-icon><span class="desktop-only">Imprimir</span></button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Corte de caja</h1>
+        <p>{{ date | dateMx }}{{ !server && !isAdmin ? ' · tus ventas y gastos del día' : ' · toda la caja' }}</p>
+      </div>
+      <div class="field date-field" *ngIf="isAdmin">
+        <label for="cc-date">Día</label>
+        <input id="cc-date" class="input" type="date" [(ngModel)]="date" (change)="load()" />
+      </div>
+    </div>
+
+    <div class="card" *ngIf="loading">
+      <div class="skeleton" *ngFor="let i of [1, 2, 3, 4]"></div>
+    </div>
+
+    <ng-container *ngIf="!loading">
+      <div class="notice warning gap" *ngIf="!fund">
+        <app-icon name="alert"></app-icon>
+        <div class="grow">No se registró fondo de caja {{ isToday ? 'hoy' : 'ese día' }}. Se toma como $0.</div>
+        <button class="btn btn-sm" type="button" (click)="editFund()">Registrar fondo</button>
+      </div>
+      <div class="notice gap" *ngIf="pendingCount">
+        <app-icon name="orders"></app-icon>
+        <div>{{ pendingCount }} pedido(s) por cobrar ({{ pendingAmount | money }}) no entran al corte hasta que se cobren.</div>
+      </div>
+
+      <!-- 1. Ventas por método de pago -->
+      <section class="card">
+        <div class="card-head"><h3>Ventas del día</h3><span class="small muted">{{ paidCount }} cobradas</span></div>
+        <div class="card-pad">
+          <div class="cut-line" *ngFor="let m of byMethod" [class.cash]="m.cash">
+            <span><app-icon [name]="m.cash ? 'cash' : 'card'"></app-icon>{{ m.name }} <span class="muted small">· {{ m.orders }}</span></span>
+            <span class="num">{{ m.amount | money }}</span>
+          </div>
+          <div class="cut-line total"><span>Total vendido</span><strong class="num">{{ totalSales | money }}</strong></div>
+          <p class="small muted note">Tarjeta y transferencia no están en la caja: se revisan contra la terminal y el banco.</p>
+        </div>
+      </section>
+
+      <!-- 2. Efectivo -->
+      <section class="card">
+        <div class="card-head"><h3>Efectivo en caja</h3></div>
+        <div class="card-pad">
+          <div class="cut-line">
+            <span>Fondo inicial <button class="link small" type="button" (click)="editFund()">{{ fund ? 'Cambiar' : 'Registrar' }}</button></span>
+            <span class="num">{{ fundAmountValue | money }}</span>
+          </div>
+          <div class="cut-line"><span>+ Ventas en efectivo</span><span class="num">{{ cashSales | money }}</span></div>
+          <div class="cut-line"><span>− Gastos y salidas <span class="muted small">· {{ activeExpenses.length }}</span></span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line total"><span>Efectivo que debe haber</span><strong class="num">{{ expectedCash | money }}</strong></div>
+          <p class="small muted note">Las compras pagadas en efectivo no se restan en el corte.</p>
+
+          <div class="field counted">
+            <label for="cc-count">Efectivo contado en caja</label>
+            <div class="input-group">
+              <span class="addon">$</span>
+              <input id="cc-count" class="input big" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="counted" placeholder="0.00" />
+            </div>
+          </div>
+
+          <div class="diff" *ngIf="difference !== null" [class.ok]="difference === 0" [class.over]="difference > 0" [class.short]="difference < 0">
+            <span>{{ difference === 0 ? 'La caja cuadra' : difference > 0 ? 'Sobran' : 'Faltan' }}</span>
+            <strong class="num" *ngIf="difference !== 0">{{ (difference < 0 ? -difference : difference) | money }}</strong>
+          </div>
+
+          <ng-container *ngIf="server && hasCounted">
+            <div class="field notes">
+              <label for="cc-notes">Nota (opcional)</label>
+              <input id="cc-notes" class="input" [(ngModel)]="notes" maxlength="255" placeholder="Ej. faltante por cambio mal dado" />
+            </div>
+            <button class="btn btn-primary btn-block save-cut" type="button" (click)="saveCut()" [disabled]="saving">
+              {{ saving ? 'Guardando…' : 'Guardar corte' }}
+            </button>
+          </ng-container>
+        </div>
+      </section>
+
+      <!-- 3. Comprobación -->
+      <section class="card" *ngIf="hasCounted">
+        <div class="card-head"><h3>Comprobación</h3></div>
+        <div class="card-pad">
+          <div class="cut-line"><span>Total vendido</span><span class="num">{{ totalSales | money }}</span></div>
+          <div class="cut-line" *ngFor="let m of nonCash"><span>− {{ m.name }}</span><span class="num">−{{ m.amount | money }}</span></div>
+          <div class="cut-line"><span>− Gastos y salidas</span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line sub"><span>Efectivo de las ventas (sistema)</span><span class="num">{{ cashFromSales | money }}</span></div>
+          <div class="cut-line sub"><span>Contado − fondo ({{ counted | money }} − {{ fundAmountValue | money }})</span><span class="num">{{ countedMinusFund | money }}</span></div>
+          <p class="small note" [class.text-success]="difference === 0" [class.text-danger]="difference !== 0">
+            {{ difference === 0 ? 'Coinciden: el efectivo contado corresponde a las ventas del día.' : 'No coinciden: revisa ventas en efectivo, gastos sin registrar o el fondo.' }}
+          </p>
+        </div>
+      </section>
+
+      <!-- Detalle de gastos -->
+      <section class="card" *ngIf="activeExpenses.length">
+        <div class="card-head"><h3>Gastos y salidas</h3><a class="link small" routerLink="/expenses">Ver gastos</a></div>
+        <div class="list">
+          <div class="list-row" *ngFor="let e of activeExpenses">
+            <div class="grow">
+              <div class="title">{{ e.reason }}</div>
+              <div class="sub">{{ e.created_at | dateMx: 'time' }} · {{ e.user_name }}</div>
+            </div>
+            <div class="end strong num">{{ e.amount | money }}</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Cortes guardados -->
+      <section class="card" *ngIf="savedCuts.length">
+        <div class="card-head"><h3>Cortes guardados</h3><span class="small muted">{{ isAdmin ? 'todos' : 'los tuyos' }}</span></div>
+        <div class="list">
+          <div class="list-row" *ngFor="let k of savedCuts">
+            <div class="grow">
+              <div class="title">{{ k.created_at | dateMx: 'time' }} · {{ k.user_name }}</div>
+              <div class="sub">Esperado {{ k.expected_cash | money }} · contado {{ k.counted_cash | money }}<span *ngIf="k.notes"> · {{ k.notes }}</span></div>
+            </div>
+            <span class="badge" [class.badge-success]="k.difference === 0" [class.badge-danger]="k.difference < 0" [class.badge-warning]="k.difference > 0">
+              {{ k.difference === 0 ? 'Cuadra' : (k.difference > 0 ? '+' : '−') + ((k.difference < 0 ? -k.difference : k.difference) | money) }}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <p class="small faint device-note" *ngIf="fund?.source === 'device'">
+        El fondo quedó guardado en este dispositivo. Haz el corte desde el mismo equipo donde se abrió la caja.
+      </p>
+    </ng-container>
+  </div>
+</ion-content>
+
+<!-- Fondo de caja -->
+<ion-modal class="sheet sheet-small" [isOpen]="fundOpen" (didDismiss)="fundOpen = false" [backdropDismiss]="!savingFund">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Fondo de caja</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="fundOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="field">
+          <label for="cc-fund">Fondo inicial en efectivo · {{ date | dateMx }}</label>
+          <div class="input-group">
+            <span class="addon">$</span>
+            <input id="cc-fund" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="fundAmount" (keyup.enter)="saveFund()" />
+          </div>
+        </div>
+        <div class="form-error" *ngIf="fundError">{{ fundError }}</div>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn btn-primary" type="button" (click)="saveFund()" [disabled]="savingFund">{{ savingFund ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
