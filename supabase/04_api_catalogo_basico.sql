@@ -96,7 +96,19 @@ begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth_long(t);
   return la_obra_v2.ok(200, 'Métodos de pago', jsonb_build_object('payment_methods', (
-    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'status', status) order by name, id), '[]') from la_obra_v2.payment_methods)));
+    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'status', status,
+             'commission_percent', coalesce(commission_percent, 0)::float8) order by name, id), '[]') from la_obra_v2.payment_methods)));
+end $$;
+
+-- Porcentaje de comisión válido (0 a 99.99, dos decimales); p_default si no viene
+create or replace function la_obra_v2.commission_value(v jsonb, p_default numeric default 0)
+returns numeric language plpgsql as $$
+begin
+  if v is null or jsonb_typeof(v) = 'null' or (jsonb_typeof(v) = 'string' and btrim(v #>> '{}') = '') then return p_default; end if;
+  if not la_obra_v2.is_num(v) or la_obra_v2.num(v) < 0 or la_obra_v2.num(v) >= 100 then
+    perform la_obra_v2.fail(422, 'La comisión debe ser un porcentaje entre 0 y 99.99');
+  end if;
+  return round(la_obra_v2.num(v), 2);
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__create(m text, q jsonb, b jsonb, t text)
@@ -107,8 +119,10 @@ begin
   perform la_obra_v2.auth_long(t, true);
   if v_name = '' then perform la_obra_v2.fail(422, 'El nombre es obligatorio'); end if;
   if exists(select 1 from la_obra_v2.payment_methods where lower(name) = lower(v_name)) then perform la_obra_v2.fail(409, 'El método de pago ya existe'); end if;
-  insert into la_obra_v2.payment_methods(name, status) values (v_name, 'active') returning id into v_id;
-  return la_obra_v2.ok(201, 'Método de pago registrado correctamente', jsonb_build_object('payment_method', jsonb_build_object('id', v_id, 'name', v_name, 'status', 'active')));
+  insert into la_obra_v2.payment_methods(name, status, commission_percent)
+  values (v_name, 'active', la_obra_v2.commission_value(b -> 'commission_percent', case when lower(v_name) like '%tarjeta%' then 4 else 0 end)) returning id into v_id;
+  return la_obra_v2.ok(201, 'Método de pago registrado correctamente', jsonb_build_object('payment_method', jsonb_build_object('id', v_id, 'name', v_name, 'status', 'active',
+    'commission_percent', (select commission_percent::float8 from la_obra_v2.payment_methods where id = v_id))));
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__status(m text, q jsonb, b jsonb, t text)
@@ -124,6 +138,25 @@ begin
   if not exists(select 1 from la_obra_v2.payment_methods where id = v_id) then perform la_obra_v2.fail(404, 'Método de pago no encontrado'); end if;
   update la_obra_v2.payment_methods set status = v_status where id = v_id;
   return la_obra_v2.ok(200, 'Estado del método de pago actualizado correctamente');
+end $$;
+
+-- payment-methods/commission.php · PATCH {id, commission_percent}: comisión de la terminal (ej. 4 para tarjeta)
+-- Aplica a los cobros que se registren desde ese momento; los anteriores conservan la suya.
+create or replace function la_obra_v2.ep_payment_methods__commission(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare v_id int; v_pct numeric;
+begin
+  perform la_obra_v2.method(m, 'PATCH');
+  perform la_obra_v2.auth_long(t, true);
+  b := la_obra_v2.body(b);
+  v_id := la_obra_v2.positive_id(b -> 'id');
+  if not exists(select 1 from la_obra_v2.payment_methods where id = v_id) then perform la_obra_v2.fail(404, 'Método de pago no encontrado'); end if;
+  if not (b ? 'commission_percent') then perform la_obra_v2.fail(422, 'Indica la comisión'); end if;
+  v_pct := la_obra_v2.commission_value(b -> 'commission_percent', 0);
+  update la_obra_v2.payment_methods set commission_percent = v_pct where id = v_id;
+  return la_obra_v2.ok(200, 'Comisión actualizada', jsonb_build_object('payment_method', (
+    select jsonb_build_object('id', id, 'name', name, 'status', status, 'commission_percent', commission_percent::float8)
+      from la_obra_v2.payment_methods where id = v_id)));
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__delete(m text, q jsonb, b jsonb, t text)

@@ -124,9 +124,30 @@ export class Auth {
     const data = response.data;
 
     if (data.success && data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
+      localStorage.setItem('user', JSON.stringify({ ...this.getStoredUser(), ...data.user }));
+      window.dispatchEvent(new CustomEvent('la-obra-user-updated'));
     }
 
+    return data;
+  }
+
+  // Foto de perfil: data URL (JPEG/PNG/WEBP) para guardarla o null para quitarla
+  async setAvatar(dataUrl: string | null) {
+    const token = this.getToken();
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const response = dataUrl
+      ? await axios.post(`${this.apiUrl}/auth/avatar.php`, { image: dataUrl }, { headers, timeout: 30000 })
+      : await axios.delete(`${this.apiUrl}/auth/avatar.php`, { headers });
+    const data = response.data;
+    if (data.success) {
+      const user = this.getStoredUser();
+      if (user) {
+        user.avatar_path = data.avatar_path ?? null;
+        localStorage.setItem('user', JSON.stringify(user));
+      }
+      // El menú lateral escucha este aviso para cambiar la foto al momento
+      window.dispatchEvent(new CustomEvent('la-obra-user-updated'));
+    }
     return data;
   }
 

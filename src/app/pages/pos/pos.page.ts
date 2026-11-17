@@ -120,6 +120,15 @@ export class PosPage {
     return String(this.method?.name ?? '').trim().toLowerCase() === 'efectivo';
   }
 
+  // Comisión que cobra la terminal con este método (ej. 4 % con tarjeta); null si no tiene
+  get feePercent(): number {
+    return Number(this.method?.commission_percent) || 0;
+  }
+
+  get fee(): number | null {
+    return this.feePercent > 0 ? Math.round(this.total * this.feePercent) / 100 : null;
+  }
+
   get changeDue(): number | null {
     if (!this.isCash || this.cash === null) return null;
     return Math.round((Number(this.cash) - this.total) * 100) / 100;

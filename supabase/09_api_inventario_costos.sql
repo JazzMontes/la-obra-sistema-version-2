@@ -56,6 +56,49 @@ begin
   return la_obra_v2.ok(200, 'Inventario ajustado', jsonb_build_object('stock', la_obra_v2.inv_stock(v_id)::float8, 'difference', v_diff::float8));
 end $$;
 
+-- inventory/count.php · POST {items: [{input_id, counted_quantity, unit_id?}], note?}
+-- Captura de existencias: registra lo que hay HOY de varios insumos a la vez, aunque no tengan
+-- compras ni costo registrado. Por cada insumo con diferencia se guarda un "Ajuste por conteo";
+-- no toca compras, recetas ni costos. Los insumos que se dejan vacíos no se modifican.
+create or replace function la_obra_v2.ep_inventory__count(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; it jsonb; v_id int; v_counted numeric; v_note text; v_before numeric; v_diff numeric; v_seen int[] := '{}';
+        v_changed int := 0; v_same int := 0; un la_obra_v2.input_units;
+begin
+  perform la_obra_v2.method(m, 'POST');
+  u := la_obra_v2.auth(t, true);
+  b := la_obra_v2.body(b);
+  if jsonb_typeof(b -> 'items') is distinct from 'array' or jsonb_array_length(b -> 'items') = 0 then
+    perform la_obra_v2.fail(422, 'Escribe la existencia de al menos un insumo');
+  end if;
+  v_note := la_obra_v2.jstr(b -> 'note');
+  if char_length(v_note) > 255 then perform la_obra_v2.fail(422, 'La nota es demasiado larga'); end if;
+  for it in select * from jsonb_array_elements(b -> 'items') loop
+    v_id := la_obra_v2.positive_id(it -> 'input_id', 'Insumo inválido');
+    if v_id = any(v_seen) then perform la_obra_v2.fail(422, 'Hay un insumo repetido en la captura'); end if;
+    v_seen := v_seen || v_id;
+    if not exists(select 1 from la_obra_v2.inputs where id = v_id) then perform la_obra_v2.fail(404, 'Insumo no encontrado: ' || v_id); end if;
+    if not la_obra_v2.is_num(it -> 'counted_quantity') or la_obra_v2.num(it -> 'counted_quantity') < 0 then
+      perform la_obra_v2.fail(422, 'Las existencias no pueden ser negativas');
+    end if;
+    v_counted := la_obra_v2.num(it -> 'counted_quantity');
+    if la_obra_v2.not_empty(it -> 'unit_id') then
+      select * into un from la_obra_v2.input_units where id = la_obra_v2.positive_id(it -> 'unit_id', 'Medida inválida');
+      if un.id is null or un.input_id <> v_id then perform la_obra_v2.fail(422, 'La medida elegida no corresponde al insumo'); end if;
+      v_counted := v_counted * un.base_amount / un.unit_amount;
+    end if;
+    v_before := la_obra_v2.inv_stock(v_id);
+    v_diff := round(v_counted - v_before, 3);
+    if abs(v_diff) < 0.0005 then v_same := v_same + 1; continue; end if;
+    perform la_obra_v2.inv_record(v_id, 'adjustment', v_diff, la_obra_v2.input_cost(v_id), 'adjustment', null,
+      coalesce(nullif(v_note, ''), 'Captura de existencias'), u.id);
+    v_changed := v_changed + 1;
+  end loop;
+  return la_obra_v2.ok(200, case when v_changed = 0 then 'Sin cambios: las existencias ya coincidían'
+                                 else 'Existencias guardadas: ' || v_changed || ' insumo(s) actualizado(s)' end,
+    jsonb_build_object('updated', v_changed, 'unchanged', v_same));
+end $$;
+
 create or replace function la_obra_v2.cost_mode(q jsonb)
 returns text language plpgsql as $$
 declare v text := coalesce(la_obra_v2.jtext(q -> 'delivery_mode'), 'local');

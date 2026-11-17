@@ -182,7 +182,7 @@ create or replace function la_obra_v2.ep_orders__checkout(m text, q jsonb, b jso
 returns jsonb language plpgsql as $$
 declare u la_obra_v2.users; v_mode text; v_customer text; it jsonb; v_pid int; v_q int; v_lines jsonb := '{}'; k text;
         pr record; v_payment jsonb; pm record; v_deliver boolean; v_order int; v_total numeric := 0; v_sub numeric;
-        v_cash numeric; v_change numeric; v_cash_j jsonb;
+        v_cash numeric; v_change numeric; v_cash_j jsonb; v_fee numeric;
 begin
   perform la_obra_v2.method(m, 'POST');
   u := la_obra_v2.auth(t);
@@ -239,7 +239,9 @@ begin
       v_cash := la_obra_v2.num(v_cash_j);
       v_change := round(v_cash - v_total, 2);
     end if;
-    insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount) values (v_order, pm.id, v_total, round(v_cash, 2), v_change);
+    v_fee := la_obra_v2.payment_commission(pm.id, v_total);
+    insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount, commission_amount)
+    values (v_order, pm.id, v_total, round(v_cash, 2), v_change, v_fee);
     update la_obra_v2.orders set payment_status = 'paid' where id = v_order;
   end if;
   if v_deliver then
@@ -247,7 +249,7 @@ begin
     perform la_obra_v2.inv_consume_order(v_order, u.id);
   end if;
   return la_obra_v2.ok(201, 'Venta registrada', jsonb_build_object('order', jsonb_build_object('id', v_order, 'total', v_total::float8,
-    'change_amount', v_change::float8, 'payment_status', case when v_payment is not null then 'paid' else 'pending' end,
+    'change_amount', v_change::float8, 'commission_amount', v_fee::float8, 'payment_status', case when v_payment is not null then 'paid' else 'pending' end,
     'delivery_status', case when v_deliver then 'delivered' else 'pending' end)));
 end $$;
 
@@ -273,6 +275,7 @@ begin
       'customer_name', o.customer_name, 'created_at', o.created_at, 'confirmed_at', o.confirmed_at, 'delivered_at', o.delivered_at,
       'cancelled_at', o.cancelled_at, 'total', o.total::float8, 'order_status', o.order_status, 'payment_status', o.payment_status,
       'delivery_status', o.delivery_status, 'payment_method_id', pm.id, 'payment_method', pm.name, 'paid_at', p.paid_at,
+      'commission_amount', p.commission_amount::float8,
       'items', la_obra_v2.order_items_json(o.id)) order by o.created_at desc, o.id desc), '[]')
     from la_obra_v2.orders o join la_obra_v2.users us on us.id = o.user_id
     left join la_obra_v2.payments p on p.order_id = o.id left join la_obra_v2.payment_methods pm on pm.id = p.payment_method_id
@@ -290,7 +293,7 @@ begin
   u := la_obra_v2.auth_long(t);
   if not la_obra_v2.int_arg(q -> 'id') then perform la_obra_v2.fail(422, 'El id no es válido'); end if;
   v_id := la_obra_v2.num(q -> 'id');
-  select o2.*, us.name as user_name, p.id as payment_id, p.amount, p.cash_received, p.change_amount, p.paid_at, pm.id as pm_id, pm.name as pm_name
+  select o2.*, us.name as user_name, p.id as payment_id, p.amount, p.cash_received, p.change_amount, p.paid_at, p.commission_amount, pm.id as pm_id, pm.name as pm_name
     into o from la_obra_v2.orders o2 join la_obra_v2.users us on us.id = o2.user_id
     left join la_obra_v2.payments p on p.order_id = o2.id left join la_obra_v2.payment_methods pm on pm.id = p.payment_method_id where o2.id = v_id;
   if o.id is null then perform la_obra_v2.fail(404, 'Venta o pedido no encontrado'); end if;
@@ -300,12 +303,13 @@ begin
     'created_at', o.created_at, 'confirmed_at', o.confirmed_at, 'delivered_at', o.delivered_at, 'cancelled_at', o.cancelled_at,
     'items', la_obra_v2.order_items_json(o.id),
     'payment', case when o.payment_id is null then null else jsonb_build_object('id', o.payment_id, 'payment_method_id', o.pm_id, 'payment_method', o.pm_name,
-      'amount', o.amount::float8, 'cash_received', o.cash_received::float8, 'change_amount', o.change_amount::float8, 'paid_at', o.paid_at) end)));
+      'amount', o.amount::float8, 'cash_received', o.cash_received::float8, 'change_amount', o.change_amount::float8, 'paid_at', o.paid_at,
+      'commission_amount', o.commission_amount::float8) end)));
 end $$;
 
 create or replace function la_obra_v2.ep_sales__payment(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare v_o int; v_m int; o record; pm record; v_cash numeric; v_change numeric;
+declare v_o int; v_m int; o record; pm record; v_cash numeric; v_change numeric; v_fee numeric;
 begin
   perform la_obra_v2.method(m, 'POST');
   perform la_obra_v2.auth_long(t);
@@ -324,10 +328,12 @@ begin
     end if;
     v_cash := la_obra_v2.num(b -> 'cash_received'); v_change := v_cash - o.total;
   end if;
-  insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount) values (v_o, v_m, o.total, round(v_cash, 2), round(v_change, 2));
+  v_fee := la_obra_v2.payment_commission(v_m, o.total);
+  insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount, commission_amount)
+  values (v_o, v_m, o.total, round(v_cash, 2), round(v_change, 2), v_fee);
   update la_obra_v2.orders set payment_status = 'paid' where id = v_o;
   return la_obra_v2.ok(200, 'Pago registrado correctamente', jsonb_build_object('payment', jsonb_build_object('order_id', v_o, 'payment_method', pm.name,
-    'amount', o.total::float8, 'cash_received', v_cash::float8, 'change_amount', v_change::float8)));
+    'amount', o.total::float8, 'cash_received', v_cash::float8, 'change_amount', v_change::float8, 'commission_amount', v_fee::float8)));
 end $$;
 
 create or replace function la_obra_v2.ep_sales__cancel(m text, q jsonb, b jsonb, t text)

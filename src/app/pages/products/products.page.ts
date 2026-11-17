@@ -9,10 +9,14 @@ import { ProductSync } from '../../services/product-sync';
 import { dataUrlToBlob } from '../../utils/image';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
+import { SearchOption } from '../../shared/search-select.component';
+import { UnitOption, toBase, unitOptions } from '../../shared/units';
 
 interface RecipeLine {
   ref: string | null;   // 'i:12' insumo, 'p:3' preparación
-  quantity: number | null;
+  quantity: number | null;      // en la medida elegida (unit_id); null = unidad principal
+  unit_id: number | null;
+  // Ya no se elige en pantalla: lo nuevo es 'always'; lo guardado antes se conserva
   delivery_mode: 'always' | 'local' | 'takeaway';
   is_estimated: boolean;
 }
@@ -227,7 +231,8 @@ export class ProductsPage implements OnInit, OnDestroy {
       const rows = (await this.api.get('products/components.php', { product_id: id })).components;
       this.recipe = rows.map((r: any) => ({
         ref: r.input_id !== null ? `i:${r.input_id}` : `p:${r.preparation_id}`,
-        quantity: Number(r.quantity),
+        quantity: r.unit_id ? Number(r.unit_quantity) : Number(r.quantity),
+        unit_id: r.unit_id ? Number(r.unit_id) : null,
         delivery_mode: r.delivery_mode,
         is_estimated: !!Number(r.is_estimated),
       }));
@@ -384,7 +389,7 @@ export class ProductsPage implements OnInit, OnDestroy {
   // ---------- Receta ----------
 
   addComponent() {
-    this.recipe.push({ ref: null, quantity: 1, delivery_mode: 'always', is_estimated: false });
+    this.recipe.push({ ref: null, quantity: 1, unit_id: null, delivery_mode: 'always', is_estimated: false });
   }
 
   removeComponent(i: number) {
@@ -395,6 +400,35 @@ export class ProductsPage implements OnInit, OnDestroy {
     if (!ref) return null;
     const [k, id] = ref.split(':');
     return { kind: k as 'i' | 'p', id: Number(id) };
+  }
+
+  // Opciones del buscador: preparaciones e insumos
+  get componentOptions(): SearchOption[] {
+    return this.memo.get('componentOptions', [this.preparations, this.inputs], () => [
+      ...this.preparations.map(p => ({ id: 'p:' + p.id, name: p.name, group: 'Preparaciones', sub: this.prepUnit(p) })),
+      ...this.inputs.map(i => ({ id: 'i:' + i.id, name: i.name, group: 'Insumos', sub: i.unit })),
+    ]);
+  }
+
+  setRef(c: RecipeLine, ref: any) {
+    if (ref === c.ref) return;
+    c.ref = ref;
+    c.unit_id = null;
+  }
+
+  private prepUnit(p: any): string {
+    return ({ portion: 'porción', piece: 'pieza', g: 'g', ml: 'ml' } as any)[p?.yield_unit] ?? p?.yield_unit ?? '';
+  }
+
+  private inputOf(c: RecipeLine): any {
+    const r = this.parse(c.ref);
+    return r?.kind === 'i' ? this.inputs.find(i => i.id === r.id) : null;
+  }
+
+  // Medidas en que se puede capturar un insumo (principal + pieza, cucharada…)
+  componentUnits(c: RecipeLine): UnitOption[] {
+    const inp = this.inputOf(c);
+    return this.memo.get('units:' + c.ref, [inp], () => unitOptions(inp));
   }
 
   componentUnit(c: RecipeLine): string {
@@ -408,8 +442,10 @@ export class ProductsPage implements OnInit, OnDestroy {
   componentCost(c: RecipeLine): number | null {
     const r = this.parse(c.ref);
     if (!r || !c.quantity) return null;
-    const unit = r.kind === 'i' ? this.inputs.find(i => i.id === r.id)?.unit_cost : this.preparations.find(p => p.id === r.id)?.unit_cost;
-    return unit === null || unit === undefined ? null : Number(unit) * Number(c.quantity);
+    const inp = r.kind === 'i' ? this.inputs.find(i => i.id === r.id) : null;
+    const unit = r.kind === 'i' ? inp?.unit_cost : this.preparations.find(p => p.id === r.id)?.unit_cost;
+    const qty = r.kind === 'i' ? toBase(inp, c.unit_id, c.quantity) : Number(c.quantity);
+    return unit === null || unit === undefined ? null : Number(unit) * qty;
   }
 
   recipeCost(mode: 'local' | 'takeaway'): number | null {
@@ -446,6 +482,7 @@ export class ProductsPage implements OnInit, OnDestroy {
         input_id: r.kind === 'i' ? r.id : null,
         preparation_id: r.kind === 'p' ? r.id : null,
         quantity: Number(c.quantity),
+        unit_id: r.kind === 'i' ? c.unit_id || null : null,
         is_estimated: c.is_estimated,
         delivery_mode: c.delivery_mode,
       };

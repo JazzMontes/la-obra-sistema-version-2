@@ -63,7 +63,7 @@
 
 .ing {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 90px 36px;
+  grid-template-columns: minmax(0, 1fr) 200px 90px 36px;
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
@@ -78,7 +78,7 @@
   @media (max-width: 560px) {
     grid-template-columns: 1fr 1fr 36px;
 
-    select {
+    .ing-pick {
       grid-column: 1 / -1;
     }
 
@@ -132,4 +132,14 @@
 
 .form-error {
   margin-top: 12px;
+}
+
+.unit-select {
+  width: 110px;
+  flex-shrink: 0;
+}
+
+.card-foot.row-between {
+  flex-wrap: wrap;
+  gap: 8px;
 }

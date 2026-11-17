@@ -8,7 +8,7 @@ set check_function_bodies = off;
 -- Tablas en orden de dependencias (para insertar; se borran al revés)
 create or replace function la_obra_v2.backup_tables()
 returns text[] language sql immutable as $$
-  select array['users','sessions','categories','payment_methods','inputs','products','preparations','preparation_inputs',
+  select array['users','sessions','categories','payment_methods','inputs','input_units','products','preparations','preparation_inputs',
                'recipes','product_components','orders','order_items','payments','purchases','purchase_items','purchase_history',
                'expenses','expense_history','waste_records','inventory_movements','order_test_invoices','work_location','attendance'];
 $$;
@@ -59,6 +59,8 @@ begin
       execute format('select setval(%L, greatest(coalesce((select max(id) from la_obra_v2.%I), 0), 1), (select count(*) > 0 from la_obra_v2.%I))', seq, tb, tb);
     end if;
   end loop;
+  -- Respaldos anteriores a la comisión de terminal: Tarjeta vuelve a quedar con 4 %
+  update la_obra_v2.payment_methods set commission_percent = 4.00 where commission_percent is null and lower(name) like '%tarjeta%';
   if jsonb_typeof(bk -> 'files') = 'array' and jsonb_array_length(bk -> 'files') > 0 then
     delete from la_obra_v2.files;
     insert into la_obra_v2.files(path, mime, data, created_at)

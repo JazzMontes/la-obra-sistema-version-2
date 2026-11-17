@@ -29,7 +29,7 @@
 
         <div class="menu-user">
           <button type="button" class="user-chip" (click)="go('/profile')">
-            <span class="avatar avatar-sm">{{ initials }}</span>
+            <app-user-avatar class="avatar avatar-sm" [user]="user"></app-user-avatar>
             <span class="grow">
               <span class="user-name">{{ user?.name }}</span>
               <span class="user-role">{{ isAdmin ? 'Administrador' : 'Empleado' }}</span>

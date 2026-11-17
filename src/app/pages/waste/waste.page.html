@@ -93,10 +93,7 @@
           <div class="segmented block">
             <button type="button" *ngFor="let k of kinds" [class.active]="form.affected_type === k.key" (click)="setKind(k.key)">{{ k.label }}</button>
           </div>
-          <select class="select" [(ngModel)]="form.affected_id" aria-label="Elemento">
-            <option [ngValue]="null" disabled>Selecciona…</option>
-            <option *ngFor="let o of options" [ngValue]="o.id">{{ o.name }}</option>
-          </select>
+          <app-search-select [items]="options" [(value)]="form.affected_id" placeholder="Buscar por nombre" ariaLabel="Elemento"></app-search-select>
           <span class="hint" *ngIf="form.affected_type !== 'input'">Se descuentan del inventario los insumos que lleva, según su receta.</span>
         </div>
         <div class="grid-2">

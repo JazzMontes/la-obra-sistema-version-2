@@ -27,7 +27,7 @@
       </ng-container>
       <div class="list" *ngIf="!loading && users.length">
         <div class="list-row" *ngFor="let u of users">
-          <div class="avatar avatar-sm">{{ initials(u) }}</div>
+          <app-user-avatar class="avatar avatar-sm" [user]="u"></app-user-avatar>
           <div class="grow">
             <div class="title">{{ u.name }} <span class="badge badge-info plain" *ngIf="u.id === me">Tú</span></div>
             <div class="sub">{{ u.username }} · {{ u.email }}</div>

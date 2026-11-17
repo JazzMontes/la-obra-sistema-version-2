@@ -10,7 +10,7 @@
     <div class="page-intro">
       <div>
         <h1>Métodos de pago</h1>
-        <p>Se usan al cobrar y al registrar compras. "Efectivo" calcula el cambio y cuenta para el corte de caja.</p>
+        <p>Se usan al cobrar y al registrar compras. "Efectivo" calcula el cambio y cuenta para el corte de caja. La comisión de la terminal (ej. 4 % con tarjeta) se muestra al cobrar y se descuenta en Reportes.</p>
       </div>
     </div>
 
@@ -29,7 +29,14 @@
           <div class="grow">
             <div class="title" [class.faint]="m.status !== 'active'">{{ m.name }}</div>
             <div class="sub" *ngIf="isCash(m)">Calcula cambio · entra al corte</div>
+            <div class="sub" *ngIf="!isCash(m) && m.commission_percent > 0">La terminal cobra {{ m.commission_percent | qty: 2 }} % por venta</div>
           </div>
+          <label class="fee" *ngIf="!isCash(m)" [attr.title]="'Comisión de la terminal para ' + m.name">
+            <span class="small muted">Comisión</span>
+            <input class="input fee-input" type="number" inputmode="decimal" min="0" max="99.99" step="0.01"
+              [ngModel]="m.commission_percent" (change)="setFee(m, $event)" [attr.aria-label]="'Comisión de ' + m.name + ' en porcentaje'" />
+            <span class="small muted">%</span>
+          </label>
           <span class="badge" *ngIf="m.status !== 'active'">Inactivo</span>
           <button class="btn btn-sm" type="button" (click)="toggle(m)">{{ m.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
           <button class="btn btn-danger-ghost btn-icon" type="button" (click)="remove(m)" aria-label="Eliminar"><app-icon name="trash"></app-icon></button>

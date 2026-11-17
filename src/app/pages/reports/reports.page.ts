@@ -87,7 +87,7 @@ export class ReportsPage {
   }
 
   get netResult(): number {
-    return (this.t.gross_profit ?? 0) - (this.t.expenses ?? 0) - (this.t.waste ?? 0);
+    return (this.t.gross_profit ?? 0) - (this.t.expenses ?? 0) - (this.t.waste ?? 0) - (this.t.card_fees ?? 0);
   }
 
   print() {

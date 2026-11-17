@@ -41,7 +41,7 @@ declare v_path text := coalesce(la_obra_v2.jtext(q -> 'path'), ''); f la_obra_v2
 begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth(t);
-  if v_path !~ '^uploads/(products|tickets)/[A-Za-z0-9_.-]+$' then perform la_obra_v2.fail(422, 'Ruta de imagen inválida'); end if;
+  if v_path !~ '^uploads/(products|tickets|avatars)/[A-Za-z0-9_.-]+$' then perform la_obra_v2.fail(422, 'Ruta de imagen inválida'); end if;
   select * into f from la_obra_v2.files where path = v_path;
   if f.path is null then perform la_obra_v2.fail(404, 'La imagen no existe en el servidor'); end if;
   return la_obra_v2.ok(200, 'Imagen', jsonb_build_object('data_url', 'data:' || f.mime || ';base64,' || replace(encode(f.data, 'base64'), E'\n', '')));
@@ -226,7 +226,7 @@ $$;
 
 create or replace function la_obra_v2.ep_products__save_components(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare v_id int; it jsonb; v_in boolean; v_pr boolean; v_mode text; v_sid int;
+declare v_id int; it jsonb; v_in boolean; v_pr boolean; v_mode text; v_sid int; v_n bigint; v_qty numeric; v_uid int; v_uqty numeric;
 begin
   perform la_obra_v2.method(m, 'PUT');
   perform la_obra_v2.auth(t, true);
@@ -246,15 +246,28 @@ begin
     if (v_in and not exists(select 1 from la_obra_v2.inputs where id = v_sid)) or (v_pr and not exists(select 1 from la_obra_v2.preparations where id = v_sid)) then
       perform la_obra_v2.fail(422, 'Componente inexistente');
     end if;
+    -- Insumo capturado en otra medida (pieza, cucharada…): se valida la medida
+    if v_in then perform la_obra_v2.item_quantity(v_sid, it);
+    elsif la_obra_v2.not_empty(it -> 'unit_id') then perform la_obra_v2.fail(422, 'Las preparaciones se capturan en su unidad de rendimiento');
+    end if;
   end loop;
   delete from la_obra_v2.product_components where product_id = v_id;
-  insert into la_obra_v2.product_components(product_id, input_id, preparation_id, quantity, is_estimated, delivery_mode)
-  select v_id,
-         case when la_obra_v2.not_empty(c -> 'input_id') then la_obra_v2.num(c -> 'input_id')::int end,
-         case when la_obra_v2.not_empty(c -> 'preparation_id') then la_obra_v2.num(c -> 'preparation_id')::int end,
-         round(la_obra_v2.num(c -> 'quantity'), 3), la_obra_v2.not_empty(c -> 'is_estimated'),
-         coalesce(la_obra_v2.jtext(c -> 'delivery_mode'), 'always')
-    from jsonb_array_elements(b -> 'components') with ordinality x(c, n) order by n;
+  for it, v_n in select c, n from jsonb_array_elements(b -> 'components') with ordinality x(c, n) order by n loop
+    v_in := la_obra_v2.not_empty(it -> 'input_id');
+    if v_in then
+      select o_qty, o_unit_id, o_unit_qty into v_qty, v_uid, v_uqty from la_obra_v2.item_quantity(la_obra_v2.num(it -> 'input_id')::int, it);
+    else
+      v_qty := round(la_obra_v2.num(it -> 'quantity'), 3); v_uid := null; v_uqty := null;
+    end if;
+    insert into la_obra_v2.product_components(product_id, input_id, preparation_id, quantity, is_estimated, delivery_mode, unit_id, unit_quantity)
+    values (v_id,
+            case when v_in then la_obra_v2.num(it -> 'input_id')::int end,
+            case when la_obra_v2.not_empty(it -> 'preparation_id') then la_obra_v2.num(it -> 'preparation_id')::int end,
+            v_qty,
+            la_obra_v2.not_empty(it -> 'is_estimated'),
+            coalesce(la_obra_v2.jtext(it -> 'delivery_mode'), 'always'),
+            v_uid, v_uqty);
+  end loop;
   return la_obra_v2.ok(200, 'Composición guardada');
 end $$;
 

@@ -8,11 +8,22 @@
 <ion-content>
   <div class="page page-narrow">
     <div class="card card-pad head">
-      <div class="avatar big">{{ initials }}</div>
-      <div>
+      <button type="button" class="avatar-btn" (click)="gal.click()" [disabled]="uploading" aria-label="Cambiar foto de perfil">
+        <app-user-avatar class="avatar big" [user]="user"></app-user-avatar>
+        <span class="avatar-edit"><app-icon name="camera"></app-icon></span>
+      </button>
+      <div class="grow">
         <h1>{{ user?.name }}</h1>
         <span class="badge badge-brand">{{ user?.role === 'admin' ? 'Administrador' : 'Empleado' }}</span>
+        <div class="photo-actions">
+          <button type="button" class="btn btn-sm" (click)="cam.click()" [disabled]="uploading"><app-icon name="camera"></app-icon>Tomar foto</button>
+          <button type="button" class="btn btn-sm" (click)="gal.click()" [disabled]="uploading"><app-icon name="image"></app-icon>{{ user?.avatar_path ? 'Cambiar foto' : 'Elegir foto' }}</button>
+          <button type="button" class="btn btn-sm btn-danger-ghost" *ngIf="user?.avatar_path" (click)="removePhoto()" [disabled]="uploading">Quitar</button>
+          <span class="small muted" *ngIf="uploading">Guardando foto…</span>
+        </div>
       </div>
+      <input #cam type="file" accept="image/*" capture="user" hidden (change)="pickPhoto($event)" />
+      <input #gal type="file" accept="image/jpeg,image/png,image/webp" hidden (change)="pickPhoto($event)" />
     </div>
 
     <div class="card">

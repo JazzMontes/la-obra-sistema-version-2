@@ -59,6 +59,13 @@
           <div class="kpi-note">Gastos {{ t.expenses | money }} · mermas {{ t.waste | money }}</div>
         </div>
       </div>
+      <div class="notice gap" *ngIf="t.card_fees">
+        <app-icon name="card"></app-icon>
+        <div>
+          Comisiones de la terminal: <strong class="num">{{ t.card_fees | money }}</strong> ·
+          ventas netas {{ t.net_sales | money }} · utilidad después de comisiones {{ t.profit_after_fees | money }}
+        </div>
+      </div>
       <div class="notice warning gap" *ngIf="t.lines_without_cost">
         <app-icon name="alert"></app-icon>
         <div>{{ t.lines_without_cost }} renglón(es) vendidos no tenían receta o precio de compra; su costo cuenta como $0.</div>
@@ -136,6 +143,9 @@
                 <div class="bar"><span [style.width.%]="(m.amount / max(report.payment_methods, 'amount')) * 100"></span></div>
                 <span class="num strong">{{ m.amount | money }}</span>
               </div>
+              <ng-container *ngFor="let m of report.payment_methods">
+                <p class="small muted fee-line" *ngIf="m.commission">Comisión de la terminal ({{ m.name }}): −{{ m.commission | money }}</p>
+              </ng-container>
             </ng-container>
           </div>
         </section>
@@ -150,6 +160,7 @@
           <div class="cut-line sub"><span>Utilidad bruta</span><span class="num">{{ t.gross_profit | money }}</span></div>
           <div class="cut-line"><span>Gastos</span><span class="num">−{{ t.expenses | money }}</span></div>
           <div class="cut-line"><span>Mermas</span><span class="num">−{{ t.waste | money }}</span></div>
+          <div class="cut-line" *ngIf="t.card_fees"><span>Comisiones de la terminal (tarjeta)</span><span class="num">−{{ t.card_fees | money }}</span></div>
           <div class="cut-line total"><span>Resultado de operación</span><strong class="num" [class.text-danger]="netResult < 0">{{ netResult | money }}</strong></div>
           <p class="small muted note">
             Las compras no se restan aquí: se convierten en inventario y se reflejan en el costo de lo vendido conforme se usan.

@@ -25,7 +25,7 @@ export class ApiImageDirective implements OnChanges {
       return;
     }
     // Normalizar a ruta relativa uploads/... (por si llega una URL completa)
-    const m = /(uploads\/(?:products|tickets)\/[^?#]+)/.exec(value);
+    const m = /(uploads\/(?:products|tickets|avatars)\/[^?#]+)/.exec(value);
     const path = m ? m[1] : value.replace(/^\/+/, '');
     try {
       let p = cache.get(path);

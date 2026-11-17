@@ -5,6 +5,8 @@ import { UiService } from '../../services/ui';
 import { Auth } from '../../services/auth';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
+import { UnitOption, unitOptions } from '../../shared/units';
+import { normalize } from '../../shared/search-select.component';
 
 const TYPES: Record<string, { label: string; icon: string }> = {
   purchase: { label: 'Compra', icon: 'purchases' },
@@ -44,6 +46,13 @@ export class InventoryPage {
   minStock: number | null = null;
   saving = false;
 
+  // Captura de existencias (varios insumos a la vez)
+  countOpen = false;
+  countQuery = '';
+  countNote = '';
+  savingCount = false;
+  private counts = new Map<number, { qty: any; unit_id: number | null }>();
+
   constructor(private api: ApiService, private ui: UiService, private auth: Auth) {}
 
   get isAdmin(): boolean {
@@ -78,6 +87,69 @@ export class InventoryPage {
     if (i.stock <= 0) return 0;
     if (!i.min_stock) return 100;
     return Math.min(100, Math.round((i.stock / (i.min_stock * 2)) * 100));
+  }
+
+  // ---------- Captura de existencias ----------
+
+  openCount() {
+    this.counts = new Map();
+    this.countQuery = '';
+    this.countNote = '';
+    this.countOpen = true;
+  }
+
+  get countVisible(): any[] {
+    return this.memo.get('countVisible', [this.items, this.countQuery], () => {
+      const q = normalize(this.countQuery);
+      return this.items.filter(i => !q || normalize(i.name).includes(q));
+    });
+  }
+
+  countRow(i: any) {
+    let r = this.counts.get(i.id);
+    if (!r) {
+      r = { qty: null, unit_id: null };
+      this.counts.set(i.id, r);
+    }
+    return r;
+  }
+
+  units(i: any): UnitOption[] {
+    return this.memo.get('units:' + i.id, [i], () => unitOptions(i));
+  }
+
+  get countFilled(): number {
+    let n = 0;
+    this.counts.forEach(r => {
+      if (r.qty !== null && r.qty !== '' && r.qty !== undefined) n++;
+    });
+    return n;
+  }
+
+  async saveCount() {
+    if (this.savingCount) return;
+    const items: any[] = [];
+    for (const [id, r] of this.counts) {
+      if (r.qty === null || r.qty === '' || r.qty === undefined) continue;
+      const q = Number(r.qty);
+      if (!Number.isFinite(q) || q < 0) {
+        const name = this.items.find(i => i.id === id)?.name ?? '';
+        return this.ui.error(`Revisa la cantidad de ${name}: no puede ser negativa`);
+      }
+      items.push({ input_id: id, counted_quantity: q, unit_id: r.unit_id || null });
+    }
+    if (!items.length) return this.ui.error('Escribe la existencia de al menos un insumo');
+    this.savingCount = true;
+    try {
+      const r = await this.api.post('inventory/count.php', { items, note: this.countNote.trim() });
+      this.countOpen = false;
+      this.ui.success(r.message || 'Existencias guardadas');
+      await this.load();
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudieron guardar las existencias'));
+    } finally {
+      this.savingCount = false;
+    }
   }
 
   type(t: string) {

@@ -11,11 +11,54 @@
 }
 
 .avatar.big {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
   background: var(--ink);
   color: #fff;
   font-size: 22px;
   border: 0;
+}
+
+// Foto de perfil
+.avatar-btn {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 50%;
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.avatar-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--ink);
+  border: 2px solid var(--surface);
+  display: grid;
+  place-items: center;
+
+  app-icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
 }

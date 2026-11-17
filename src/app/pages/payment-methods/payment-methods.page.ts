@@ -56,6 +56,27 @@ export class PaymentMethodsPage {
     }
   }
 
+  // Comisión de la terminal (porcentaje); aplica a los cobros que se hagan desde ahora
+  async setFee(m: any, event: Event) {
+    const input = event.target as HTMLInputElement;
+    const raw = input.value.trim();
+    const value = raw === '' ? 0 : Number(raw);
+    if (!Number.isFinite(value) || value < 0 || value >= 100) {
+      this.ui.error('La comisión debe ser un porcentaje entre 0 y 99.99');
+      input.value = String(m.commission_percent ?? 0);
+      return;
+    }
+    if (Math.abs(value - Number(m.commission_percent ?? 0)) < 0.001) return;
+    try {
+      const r = await this.api.patch('payment-methods/commission.php', { id: m.id, commission_percent: value });
+      m.commission_percent = r.payment_method?.commission_percent ?? value;
+      this.ui.success(value > 0 ? `Comisión de ${m.name}: ${value} %` : `${m.name} sin comisión`);
+    } catch (e) {
+      input.value = String(m.commission_percent ?? 0);
+      this.ui.error(errorMessage(e));
+    }
+  }
+
   async toggle(m: any) {
     try {
       await this.api.patch('payment-methods/status.php', { id: m.id, status: m.status === 'active' ? 'inactive' : 'active' });

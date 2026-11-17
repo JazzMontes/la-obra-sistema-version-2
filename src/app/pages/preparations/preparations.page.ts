@@ -1,14 +1,18 @@
 // Preparaciones: lo que se produce con insumos (ej. carne preparada) y cuánto rinde.
 // Su costo por porción sale de las compras y se usa en las recetas de los productos.
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ViewChild } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
+import { InputFormComponent } from '../../shared/input-form.component';
+import { SearchOption } from '../../shared/search-select.component';
+import { UnitOption, toBase, unitOptions } from '../../shared/units';
 
 export const YIELD_UNITS: Record<string, string> = { portion: 'porción', piece: 'pieza', g: 'g', ml: 'ml' };
 
-interface Ingredient { input_id: number | null; quantity: number | null; is_estimated: boolean; }
+// quantity está en la medida elegida (unit_id); null = unidad principal del insumo
+interface Ingredient { input_id: number | null; quantity: number | null; unit_id: number | null; is_estimated: boolean; }
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -36,6 +40,13 @@ export class PreparationsPage {
   ingredients: Ingredient[] = [];
   saving = false;
   formError = '';
+
+  // Insumo nuevo desde un renglón
+  @ViewChild(InputFormComponent) inputForm?: InputFormComponent;
+  inputModalOpen = false;
+  savingInput = false;
+  newInputName = '';
+  private inputForRow: Ingredient | null = null;
 
   constructor(private api: ApiService, private ui: UiService) {}
 
@@ -72,12 +83,64 @@ export class PreparationsPage {
     return this.inputs.find(i => Number(i.id) === Number(id));
   }
 
+  // Opciones del buscador de insumos
+  get inputOptions(): SearchOption[] {
+    return this.memo.get('inputOptions', [this.inputs], () =>
+      this.inputs.map(i => ({ id: Number(i.id), name: i.name, sub: [i.unit, ...(i.units ?? []).map((u: any) => u.name)].join(' · ') }))
+    );
+  }
+
+  // Medidas en que se puede capturar el insumo (principal + otras)
+  units(id: number | null): UnitOption[] {
+    const inp = this.input(id);
+    return this.memo.get('units:' + id, [inp], () => unitOptions(inp));
+  }
+
+  setInput(g: Ingredient, id: any) {
+    if (Number(id) === Number(g.input_id)) return;
+    g.input_id = id === null ? null : Number(id);
+    g.unit_id = null;
+  }
+
+  // ---------- Insumo nuevo ----------
+
+  newInput(row: Ingredient | null, name: string) {
+    this.inputForRow = row;
+    this.newInputName = name || '';
+    this.inputModalOpen = true;
+  }
+
+  async saveInput() {
+    if (!this.inputForm) return;
+    this.savingInput = true;
+    await this.inputForm.submit();
+    this.savingInput = false;
+  }
+
+  onInputCreated(input: any) {
+    const created = { stock: 0, unit_cost: null, units: [], ...input, status: 'active' };
+    this.inputs = [...this.inputs, created].sort((a, b) => a.name.localeCompare(b.name));
+    let row = this.inputForRow;
+    if (!row) {
+      row = this.ingredients.find(g => !g.input_id) ?? null;
+      if (!row) {
+        row = { input_id: null, quantity: null, unit_id: null, is_estimated: false };
+        this.ingredients.push(row);
+      }
+    }
+    row.input_id = Number(created.id);
+    row.unit_id = null;
+    this.inputModalOpen = false;
+    this.inputForRow = null;
+    this.ui.success(`"${created.name}" registrado`);
+  }
+
   // ---------- Formulario ----------
 
   openNew() {
     this.editingId = null;
     this.form = { name: '', description: '', yield_quantity: null, yield_unit: 'portion', yield_estimated: false };
-    this.ingredients = [{ input_id: null, quantity: null, is_estimated: false }];
+    this.ingredients = [{ input_id: null, quantity: null, unit_id: null, is_estimated: false }];
     this.formError = '';
     this.formOpen = true;
   }
@@ -91,13 +154,19 @@ export class PreparationsPage {
       yield_unit: p.yield_unit,
       yield_estimated: !!p.yield_estimated,
     };
-    this.ingredients = p.inputs.map((i: any) => ({ input_id: Number(i.input_id), quantity: Number(i.quantity), is_estimated: !!i.is_estimated }));
+    this.ingredients = p.inputs.map((i: any) => ({
+      input_id: Number(i.input_id),
+      // Si se capturó en otra medida (pieza, cucharada…) se muestra igual que como se escribió
+      quantity: i.unit_id ? Number(i.unit_quantity) : Number(i.quantity),
+      unit_id: i.unit_id ? Number(i.unit_id) : null,
+      is_estimated: !!i.is_estimated,
+    }));
     this.formError = '';
     this.formOpen = true;
   }
 
   addIngredient() {
-    this.ingredients.push({ input_id: null, quantity: null, is_estimated: false });
+    this.ingredients.push({ input_id: null, quantity: null, unit_id: null, is_estimated: false });
   }
 
   removeIngredient(i: number) {
@@ -105,8 +174,9 @@ export class PreparationsPage {
   }
 
   ingredientCost(g: Ingredient): number | null {
-    const c = this.input(g.input_id)?.unit_cost;
-    return c === null || c === undefined || !g.quantity ? null : Number(c) * Number(g.quantity);
+    const inp = this.input(g.input_id);
+    const c = inp?.unit_cost;
+    return c === null || c === undefined || !g.quantity ? null : Number(c) * toBase(inp, g.unit_id, g.quantity);
   }
 
   get batchCost(): number | null {
@@ -147,7 +217,7 @@ export class PreparationsPage {
       yield_quantity: Number(this.form.yield_quantity),
       yield_unit: this.form.yield_unit,
       yield_estimated: !!this.form.yield_estimated,
-      inputs: items.map(g => ({ input_id: g.input_id, quantity: Number(g.quantity), is_estimated: g.is_estimated })),
+      inputs: items.map(g => ({ input_id: g.input_id, quantity: Number(g.quantity), unit_id: g.unit_id || null, is_estimated: g.is_estimated })),
     };
     this.saving = true;
     try {

@@ -74,6 +74,11 @@ export class AppComponent implements OnDestroy {
 
   private onOnline = () => this.zone.run(() => (this.online = true));
   private onOffline = () => this.zone.run(() => (this.online = false));
+  // Cambió el nombre o la foto de perfil (pantalla Mi perfil)
+  private onUserUpdated = () => {
+    this.user = this.auth.getStoredUser();
+    this.render.schedule();
+  };
 
   constructor(
     public diagnostics: ApiDiagnosticsService,
@@ -82,7 +87,7 @@ export class AppComponent implements OnDestroy {
     private router: Router,
     private menu: MenuController,
     private zone: NgZone,
-    render: RenderService
+    private render: RenderService
   ) {
     // Se crea aquí para que funcione en toda la app (ver services/render.ts)
     void render;
@@ -100,11 +105,13 @@ export class AppComponent implements OnDestroy {
     });
     window.addEventListener('online', this.onOnline);
     window.addEventListener('offline', this.onOffline);
+    window.addEventListener('la-obra-user-updated', this.onUserUpdated);
   }
 
   ngOnDestroy() {
     window.removeEventListener('online', this.onOnline);
     window.removeEventListener('offline', this.onOffline);
+    window.removeEventListener('la-obra-user-updated', this.onUserUpdated);
   }
 
   get showMenu(): boolean {

@@ -15,7 +15,6 @@ import {
   GeolocationService,
   PermissionStatus,
   distanceMeters,
-  offsetMeters,
   toDms,
 } from '../../services/geolocation';
 
@@ -194,31 +193,26 @@ export class AttendancePage {
     return s < 5 ? 'ahora' : s < 60 ? `hace ${s} s` : `hace ${Math.round(s / 60)} min`;
   }
 
-  // Radar: el negocio al centro, su radio permitido y el punto del usuario con su margen de error
-  get radar() {
-    return this.memo.get('radar', [this.reading, this.location], () => {
-      if (!this.reading || !this.location) return null;
-      const off = offsetMeters(this.location.latitude, this.location.longitude, this.reading.latitude, this.reading.longitude);
-      const dist = Math.hypot(off.x, off.y);
-      const span = Math.max(this.location.radius_m * 1.6, dist * 1.15, 50); // metros que caben del centro al borde
-      const k = 90 / span; // el radar mide 200 x 200; 90 = radio útil
-      let x = off.x * k;
-      let y = -off.y * k; // en SVG la y crece hacia abajo
-      const outOfView = Math.hypot(x, y) > 92;
-      if (outOfView) {
-        const f = 92 / Math.hypot(x, y);
-        x *= f;
-        y *= f;
-      }
-      return {
-        fence: this.location.radius_m * k,
-        acc: Math.min(this.reading.accuracy * k, 120),
-        x: 100 + x,
-        y: 100 + y,
-        scale: Math.round(span),
-        outOfView,
-      };
-    });
+  // Tu ubicación para el mapa (misma referencia mientras no cambie la lectura)
+  get mapMe() {
+    return this.memo.get('mapMe', [this.reading], () =>
+      this.reading ? { latitude: this.reading.latitude, longitude: this.reading.longitude, accuracy: this.reading.accuracy } : null
+    );
+  }
+
+  // Punto que se está configurando (vista previa en la ventana del administrador)
+  get configPoint() {
+    const lat = Number(this.config?.latitude);
+    const lng = Number(this.config?.longitude);
+    const ok = this.config?.latitude !== null && this.config?.latitude !== '' && this.config?.longitude !== null && this.config?.longitude !== ''
+      && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+    return this.memo.get('configPoint', [ok ? lat : null, ok ? lng : null], () => (ok ? { latitude: lat, longitude: lng } : null));
+  }
+
+  // Cómo llegar desde tu ubicación al negocio, en Google Maps
+  directionsUrl(lat: number, lng: number): string {
+    if (!this.location) return this.mapUrl(lat, lng);
+    return `https://www.google.com/maps/dir/?api=1&origin=${lat},${lng}&destination=${this.location.latitude},${this.location.longitude}&travelmode=walking`;
   }
 
   mapUrl(lat: number | string, lng: number | string): string {

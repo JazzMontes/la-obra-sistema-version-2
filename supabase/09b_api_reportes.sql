@@ -53,8 +53,9 @@ begin
   perform la_obra_v2.report_auth(t);
   select * into r from la_obra_v2.report_range(q);
   return la_obra_v2.ok(200, 'Reporte', jsonb_build_object('from', r.o_from, 'to', r.o_to, 'data', (
-    select coalesce(jsonb_agg(jsonb_build_object('method_id', id::float8, 'name', name, 'amount', amount::float8, 'orders', orders::float8) order by amount desc, id), '[]') from (
-      select pm.id, pm.name, sum(pay.amount) amount, count(*) orders
+    select coalesce(jsonb_agg(jsonb_build_object('method_id', id::float8, 'name', name, 'amount', amount::float8, 'orders', orders::float8,
+             'commission', commission::float8) order by amount desc, id), '[]') from (
+      select pm.id, pm.name, sum(pay.amount) amount, count(*) orders, coalesce(sum(pay.commission_amount), 0) commission
         from la_obra_v2.payments pay join la_obra_v2.orders o on o.id = pay.order_id join la_obra_v2.payment_methods pm on pm.id = pay.payment_method_id
        where o.order_status = 'confirmed' and o.payment_status = 'paid' and pay.paid_at >= r.o_from and pay.paid_at < r.o_to + 1
        group by pm.id, pm.name) s)));
@@ -96,7 +97,7 @@ end $$;
 create or replace function la_obra_v2.ep_reports__summary(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
 declare v_from date; v_to date; tt record; cs record; v_purch numeric; v_exp numeric; v_waste numeric; canc record; v_sales numeric; v_cos numeric;
-        v_methods jsonb; v_cash_sales numeric := 0; v_cash_purch numeric;
+        v_methods jsonb; v_cash_sales numeric := 0; v_cash_purch numeric; v_fees numeric;
 begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth(t, true);
@@ -119,8 +120,9 @@ begin
   select count(*) n, coalesce(sum(total), 0) tot into canc from la_obra_v2.orders o where o.order_status = 'cancelled' and o.created_at::date between v_from and v_to;
   v_sales := tt.sales; v_cos := cs.cost;
 
-  select coalesce(jsonb_agg(jsonb_build_object('name', name, 'orders', orders::float8, 'amount', amount::float8) order by amount desc, id), '[]') into v_methods from (
-    select pm.id, pm.name, count(*) orders, sum(pay.amount) amount
+  select coalesce(sum(pay.commission_amount), 0) into v_fees from la_obra_v2.payments pay join lo_paid p on p.id = pay.order_id;
+  select coalesce(jsonb_agg(jsonb_build_object('name', name, 'orders', orders::float8, 'amount', amount::float8, 'commission', commission::float8) order by amount desc, id), '[]') into v_methods from (
+    select pm.id, pm.name, count(*) orders, sum(pay.amount) amount, coalesce(sum(pay.commission_amount), 0) commission
       from la_obra_v2.payments pay join lo_paid p on p.id = pay.order_id join la_obra_v2.payment_methods pm on pm.id = pay.payment_method_id
      group by pm.id, pm.name) s;
   select coalesce((select (x ->> 'amount')::numeric from jsonb_array_elements(v_methods) x where lower(btrim(x ->> 'name')) = 'efectivo' limit 1), 0) into v_cash_sales;
@@ -134,7 +136,10 @@ begin
       'cost_of_sales', round(v_cos, 2)::float8, 'gross_profit', round(v_sales - v_cos, 2)::float8,
       'gross_margin', case when v_sales > 0 then round((v_sales - v_cos) / v_sales * 100, 1)::float8 else null end,
       'lines_without_cost', cs.no_cost, 'purchases', round(v_purch, 2)::float8, 'expenses', round(v_exp, 2)::float8,
-      'waste', round(v_waste, 2)::float8, 'cancelled_orders', canc.n, 'cancelled_amount', round(canc.tot, 2)::float8),
+      'waste', round(v_waste, 2)::float8, 'cancelled_orders', canc.n, 'cancelled_amount', round(canc.tot, 2)::float8,
+      -- Comisiones de la terminal (tarjeta): lo que se queda el banco de las ventas cobradas
+      'card_fees', round(v_fees, 2)::float8, 'net_sales', round(v_sales - v_fees, 2)::float8,
+      'profit_after_fees', round(v_sales - v_cos - v_fees, 2)::float8),
     'daily', (select coalesce(jsonb_agg(jsonb_build_object('day', day, 'orders', orders::float8, 'sales', sales::float8) order by day), '[]') from (
         select o.created_at::date as day, count(*) orders, sum(o.total) sales from la_obra_v2.orders o join lo_paid p on p.id = o.id group by o.created_at::date) s),
     'products', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'quantity', quantity::float8, 'revenue', revenue::float8, 'cost', cost::float8) order by revenue desc, id), '[]') from (

@@ -12,7 +12,10 @@
         <h1>Inventario</h1>
         <p>Las compras suman, las ventas entregadas y las mermas restan según cada receta. Ajusta con un conteo físico cuando haga falta.</p>
       </div>
-      <a class="btn" routerLink="/purchases" *ngIf="isAdmin"><app-icon name="purchases"></app-icon>Registrar compra</a>
+      <div class="row wrap intro-actions" *ngIf="isAdmin">
+        <button class="btn btn-primary" type="button" (click)="openCount()"><app-icon name="adjust"></app-icon>Capturar existencias</button>
+        <a class="btn" routerLink="/purchases"><app-icon name="purchases"></app-icon>Registrar compra</a>
+      </div>
     </div>
 
     <div class="grid-3" *ngIf="summary">
@@ -168,6 +171,53 @@
       <div class="modal-foot">
         <button class="btn" type="button" (click)="adjustOpen = false">Cancelar</button>
         <button class="btn btn-primary" type="button" (click)="saveAdjust()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Captura de existencias: lo que hay hoy, sin necesidad de costos -->
+<ion-modal class="sheet sheet-wide" [isOpen]="countOpen" (didDismiss)="countOpen = false" [backdropDismiss]="!savingCount">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Capturar existencias</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="countOpen = false" aria-label="Cerrar" [disabled]="savingCount"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small first">
+          Escribe cuánto tienes <strong>hoy</strong> de cada insumo. No hace falta saber su costo: el valor del inventario se calcula
+          cuando registres compras. Los que dejes vacíos no cambian.
+        </p>
+        <div class="search toolbar count-search">
+          <app-icon name="search"></app-icon>
+          <input class="input" [(ngModel)]="countQuery" placeholder="Buscar insumo" />
+        </div>
+        <div class="card count-list">
+          <div class="count-row" *ngFor="let i of countVisible">
+            <div class="grow count-name">
+              <div class="title">{{ i.name }}</div>
+              <div class="sub">En el sistema: {{ i.stock | qty }} {{ i.unit }}<span *ngIf="i.unit_cost === null"> · sin costo aún</span></div>
+            </div>
+            <div class="input-group count-input">
+              <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="countRow(i).qty" placeholder="—" [attr.aria-label]="'Existencia de ' + i.name" />
+              <select class="select addon-select" *ngIf="units(i).length > 1; else baseUnit" [(ngModel)]="countRow(i).unit_id" aria-label="Medida">
+                <option *ngFor="let u of units(i)" [ngValue]="u.id">{{ u.name }}</option>
+              </select>
+              <ng-template #baseUnit><span class="addon">{{ i.unit }}</span></ng-template>
+            </div>
+          </div>
+          <div class="empty small" *ngIf="!countVisible.length"><p>Sin insumos que coincidan.</p></div>
+        </div>
+        <div class="field count-note">
+          <label for="c-note">Nota (opcional)</label>
+          <input id="c-note" class="input" [(ngModel)]="countNote" placeholder="Ej. inventario inicial" maxlength="255" />
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span class="small muted grow">{{ countFilled }} insumo(s) capturado(s)</span>
+        <button class="btn" type="button" (click)="countOpen = false" [disabled]="savingCount">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="saveCount()" [disabled]="savingCount || !countFilled">{{ savingCount ? 'Guardando…' : 'Guardar existencias' }}</button>
       </div>
     </div>
   </ng-template>

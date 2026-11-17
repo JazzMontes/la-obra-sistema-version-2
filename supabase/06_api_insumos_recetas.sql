@@ -35,7 +35,8 @@ begin
   perform la_obra_v2.auth_long(t, true);
   return la_obra_v2.ok(200, 'Insumos', jsonb_build_object('inputs', (
     select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'unit', unit, 'status', status, 'package_type', package_type,
-      'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'min_stock', min_stock) order by name, id), '[]')
+      'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'min_stock', min_stock,
+      'units', la_obra_v2.input_units_json(id)) order by name, id), '[]')
     from la_obra_v2.inputs)));
 end $$;
 
@@ -48,7 +49,8 @@ begin
   if not la_obra_v2.is_int(q -> 'id') or la_obra_v2.num(q -> 'id') <= 0 then perform la_obra_v2.fail(422, 'El id no es válido'); end if;
   v_id := la_obra_v2.num(q -> 'id')::int;
   select jsonb_build_object('id', id, 'name', name, 'unit', unit, 'status', status, 'package_type', package_type,
-         'package_quantity', package_quantity, 'package_content_unit', package_content_unit) into r from la_obra_v2.inputs where id = v_id;
+         'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'units', la_obra_v2.input_units_json(id))
+    into r from la_obra_v2.inputs where id = v_id;
   if r is null then perform la_obra_v2.fail(404, 'Insumo no encontrado'); end if;
   return la_obra_v2.ok(200, 'Insumo', jsonb_build_object('input', r));
 end $$;
@@ -64,8 +66,10 @@ begin
   if exists(select 1 from la_obra_v2.inputs where lower(name) = lower(v.o_name)) then perform la_obra_v2.fail(409, 'Ya existe un insumo con ese nombre'); end if;
   insert into la_obra_v2.inputs(name, unit, package_type, package_quantity, package_content_unit, min_stock, status)
   values (v.o_name, v.o_unit, v.o_ptype, v.o_pqty, v.o_unit, v.o_min, 'active') returning id into v_id;
+  perform la_obra_v2.save_input_units(v_id, b -> 'units');
   return la_obra_v2.ok(201, 'Insumo registrado correctamente', jsonb_build_object('input', jsonb_build_object(
-    'id', v_id, 'name', v.o_name, 'unit', v.o_unit, 'package_type', v.o_ptype, 'package_quantity', v.o_pqty::float8, 'min_stock', v.o_min, 'status', 'active')));
+    'id', v_id, 'name', v.o_name, 'unit', v.o_unit, 'package_type', v.o_ptype, 'package_quantity', v.o_pqty::float8, 'min_stock', v.o_min, 'status', 'active',
+    'stock', 0, 'unit_cost', null, 'stock_value', null, 'level', 'out', 'units', la_obra_v2.input_units_json(v_id))));
 end $$;
 
 create or replace function la_obra_v2.ep_inputs__update(m text, q jsonb, b jsonb, t text)
@@ -88,7 +92,8 @@ begin
   if exists(select 1 from la_obra_v2.inputs where lower(name) = lower(v.o_name) and id <> v_id) then perform la_obra_v2.fail(409, 'Ya existe un insumo con ese nombre'); end if;
   update la_obra_v2.inputs set name = v.o_name, unit = v.o_unit, package_type = v.o_ptype, package_quantity = v.o_pqty,
          package_content_unit = v.o_unit, min_stock = v.o_min where id = v_id;
-  return la_obra_v2.ok(200, 'Insumo actualizado correctamente');
+  if b ? 'units' then perform la_obra_v2.save_input_units(v_id, b -> 'units'); end if;
+  return la_obra_v2.ok(200, 'Insumo actualizado correctamente', jsonb_build_object('units', la_obra_v2.input_units_json(v_id)));
 end $$;
 
 create or replace function la_obra_v2.ep_inputs__activate(m text, q jsonb, b jsonb, t text)
@@ -286,8 +291,9 @@ begin
     select coalesce(jsonb_agg(to_jsonb(p) || jsonb_build_object(
       'yield_quantity', p.yield_quantity::float8,
       'inputs', (select coalesce(jsonb_agg(jsonb_build_object('input_id', pi.input_id, 'quantity', pi.quantity::float8, 'is_estimated', pi.is_estimated,
-                   'name', i.name, 'unit', i.unit) order by i.name), '[]')
-                   from la_obra_v2.preparation_inputs pi join la_obra_v2.inputs i on i.id = pi.input_id where pi.preparation_id = p.id),
+                   'name', i.name, 'unit', i.unit, 'unit_id', pi.unit_id, 'unit_quantity', pi.unit_quantity::float8, 'unit_name', un.name) order by i.name), '[]')
+                   from la_obra_v2.preparation_inputs pi join la_obra_v2.inputs i on i.id = pi.input_id
+                   left join la_obra_v2.input_units un on un.id = pi.unit_id where pi.preparation_id = p.id),
       'batch_cost', c -> 'batch_cost', 'unit_cost', c -> 'unit_cost', 'missing_prices', coalesce(c -> 'missing', '[]'))
       order by p.name, p.id), '[]')
     from la_obra_v2.preparations p cross join lateral (select la_obra_v2.preparation_cost(p.id) c) x)));
@@ -307,21 +313,30 @@ begin
   o_yield := round(la_obra_v2.num(d -> 'yield_quantity'), 3);
   for i in select * from jsonb_array_elements(d -> 'inputs') loop
     v_iid := la_obra_v2.positive_id(i -> 'input_id');
-    if v_iid = any(seen) or not la_obra_v2.is_num(i -> 'quantity') or la_obra_v2.num(i -> 'quantity') <= 0 then
+    if v_iid = any(seen) or not la_obra_v2.is_num(coalesce(nullif(i -> 'unit_quantity', 'null'::jsonb), i -> 'quantity'))
+       or la_obra_v2.num(coalesce(nullif(i -> 'unit_quantity', 'null'::jsonb), i -> 'quantity')) <= 0 then
       perform la_obra_v2.fail(422, 'Insumos duplicados o cantidades inválidas');
     end if;
     seen := seen || v_iid;
     if not exists(select 1 from la_obra_v2.inputs where id = v_iid and status = 'active') then perform la_obra_v2.fail(422, 'Insumo inexistente o inactivo'); end if;
+    perform la_obra_v2.item_quantity(v_iid, i);  -- valida la medida (pieza, cucharada…) si viene
   end loop;
 end $$;
 
+-- Cada ingrediente se guarda en la unidad principal (quantity) y, si se capturó en otra medida,
+-- también la medida y la cantidad tal como se escribió (unit_id, unit_quantity).
 create or replace function la_obra_v2.prep_save_inputs(p_id int, d jsonb)
-returns void language sql as $$
+returns void language plpgsql as $$
+declare i jsonb; n bigint; v_iid int; v_qty numeric; v_uid int; v_uqty numeric;
+begin
   delete from la_obra_v2.preparation_inputs where preparation_id = p_id;
-  insert into la_obra_v2.preparation_inputs(preparation_id, input_id, quantity, is_estimated)
-  select p_id, la_obra_v2.num(i -> 'input_id')::int, round(la_obra_v2.num(i -> 'quantity'), 3), la_obra_v2.not_empty(i -> 'is_estimated')
-    from jsonb_array_elements(d -> 'inputs') with ordinality x(i, n) order by n;
-$$;
+  for i, n in select x.i, x.n from jsonb_array_elements(d -> 'inputs') with ordinality x(i, n) order by x.n loop
+    v_iid := la_obra_v2.num(i -> 'input_id')::int;
+    select o_qty, o_unit_id, o_unit_qty into v_qty, v_uid, v_uqty from la_obra_v2.item_quantity(v_iid, i);
+    insert into la_obra_v2.preparation_inputs(preparation_id, input_id, quantity, is_estimated, unit_id, unit_quantity)
+    values (p_id, v_iid, v_qty, la_obra_v2.not_empty(i -> 'is_estimated'), v_uid, v_uqty);
+  end loop;
+end $$;
 
 create or replace function la_obra_v2.ep_preparations__create(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$

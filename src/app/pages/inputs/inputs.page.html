@@ -48,7 +48,7 @@
             <tr class="clickable" *ngFor="let i of visible" (click)="openEdit(i)">
               <td>
                 <div class="strong">{{ i.name }}</div>
-                <div class="small muted">Se usa por {{ i.unit }}</div>
+                <div class="small muted">Se usa por {{ i.unit }}<span *ngIf="i.units?.length"> · también por {{ otherUnits(i) }}</span></div>
               </td>
               <td class="num">
                 <span [class.text-danger]="i.level === 'out'" [class.text-warning]="i.level === 'low'">{{ i.stock | qty }}</span>

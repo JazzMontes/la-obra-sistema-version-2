@@ -82,19 +82,29 @@
         <div class="section-title"><h2>Ingredientes del lote</h2></div>
         <div class="card">
           <div class="ing" *ngFor="let g of ingredients; let i = index">
-            <select class="select" [(ngModel)]="g.input_id" [attr.aria-label]="'Ingrediente ' + (i + 1)">
-              <option [ngValue]="null" disabled>Insumo</option>
-              <option *ngFor="let inp of inputs" [ngValue]="inp.id">{{ inp.name }}</option>
-            </select>
+            <app-search-select
+              class="ing-pick"
+              [items]="inputOptions"
+              [value]="g.input_id"
+              (valueChange)="setInput(g, $event)"
+              placeholder="Buscar insumo por nombre"
+              [ariaLabel]="'Ingrediente ' + (i + 1)"
+              createLabel="Registrar insumo nuevo"
+              (create)="newInput(g, $event)"
+            ></app-search-select>
             <div class="input-group">
               <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="g.quantity" placeholder="0" aria-label="Cantidad" />
-              <span class="addon">{{ input(g.input_id)?.unit || '—' }}</span>
+              <select class="select addon-select unit-select" *ngIf="units(g.input_id).length > 1; else baseUnit" [(ngModel)]="g.unit_id" aria-label="Medida">
+                <option *ngFor="let u of units(g.input_id)" [ngValue]="u.id">{{ u.name }}</option>
+              </select>
+              <ng-template #baseUnit><span class="addon">{{ input(g.input_id)?.unit || '—' }}</span></ng-template>
             </div>
             <span class="num cost">{{ ingredientCost(g) | money }}</span>
             <button class="btn btn-ghost btn-icon" type="button" (click)="removeIngredient(i)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
           </div>
-          <div class="card-foot">
+          <div class="card-foot row-between">
             <button class="link small" type="button" (click)="addIngredient()">+ Agregar ingrediente</button>
+            <button class="link small" type="button" (click)="newInput(null, '')">+ Registrar insumo que no existe</button>
           </div>
         </div>
 
@@ -134,6 +144,26 @@
         <span class="grow"></span>
         <button class="btn" type="button" (click)="formOpen = false">Cancelar</button>
         <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Insumo nuevo sin salir de la preparación -->
+<ion-modal class="sheet" [isOpen]="inputModalOpen" (didDismiss)="inputModalOpen = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>Registrar insumo</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="inputModalOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body">
+        <p class="muted small first">Al guardarlo se agrega a esta preparación y sigues capturando. Su precio se toma de la primera compra que registres.</p>
+        <app-input-form [initialName]="newInputName" (saved)="onInputCreated($event)"></app-input-form>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="inputModalOpen = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="saveInput()" [disabled]="savingInput">{{ savingInput ? 'Guardando…' : 'Guardar y continuar' }}</button>
       </div>
     </div>
   </ng-template>

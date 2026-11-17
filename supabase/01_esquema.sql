@@ -293,6 +293,41 @@ insert into la_obra_v2.payment_methods (name, status) values
   ('Efectivo','active'), ('Transferencia','active'), ('Tarjeta','active')
 on conflict (name) do nothing;
 
+-- ---------- Mejoras (noviembre 2026) ----------
+-- Solo AGREGAN columnas y tablas; no borran ni cambian lo que ya está guardado.
+-- Todas las columnas nuevas aceptan vacío (null) para que los respaldos anteriores se puedan restaurar.
+
+-- Foto de perfil de cada usuario (la imagen vive en la_obra_v2.files, carpeta uploads/avatars/)
+alter table la_obra_v2.users add column if not exists avatar_path varchar(255) null;
+
+-- Otras medidas de un insumo: "1 pieza de tomate = 120 g", "1 cucharada de mostaza = 15 g".
+-- unit_amount de "name" equivalen a base_amount de la unidad principal del insumo (inputs.unit).
+-- El inventario y los costos siguen en la unidad principal; estas medidas solo sirven para capturar.
+create table if not exists la_obra_v2.input_units (
+  id          serial primary key,
+  input_id    int not null references la_obra_v2.inputs(id) on delete cascade,
+  name        varchar(30) not null,
+  unit_amount numeric(12,3) not null default 1 check (unit_amount > 0),
+  base_amount numeric(14,4) not null check (base_amount > 0),
+  created_at  timestamp null default localtimestamp
+);
+create unique index if not exists uq_input_units_name on la_obra_v2.input_units(input_id, lower(name));
+
+-- En qué medida se capturó cada ingrediente. "quantity" sigue guardando la cantidad en la unidad
+-- principal (la que usan costos e inventario), así que lo anterior funciona igual.
+alter table la_obra_v2.preparation_inputs add column if not exists unit_id int null references la_obra_v2.input_units(id) on delete set null;
+alter table la_obra_v2.preparation_inputs add column if not exists unit_quantity numeric(12,3) null;
+alter table la_obra_v2.product_components add column if not exists unit_id int null references la_obra_v2.input_units(id) on delete set null;
+alter table la_obra_v2.product_components add column if not exists unit_quantity numeric(12,3) null;
+
+-- Comisión de la terminal por método de pago (porcentaje) y lo que se descontó en cada cobro
+alter table la_obra_v2.payment_methods add column if not exists commission_percent numeric(5,2) null
+  check (commission_percent is null or (commission_percent >= 0 and commission_percent < 100));
+alter table la_obra_v2.payments add column if not exists commission_amount numeric(10,2) null;
+-- Tarjeta: 4 % (solo si nunca se ha configurado; si después lo cambias, no se vuelve a tocar)
+update la_obra_v2.payment_methods set commission_percent = 4.00
+ where commission_percent is null and lower(name) like '%tarjeta%';
+
 -- ---------- Nadie entra a las tablas directamente ----------
 -- Seguridad por fila activada y sin políticas: ni la clave pública ni usuarios de Supabase
 -- pueden leer o escribir. Solo la función pública la_obra_v2_api (security definer).

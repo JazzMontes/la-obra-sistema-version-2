@@ -72,7 +72,7 @@
       </div>
     </div>
 
-    <!-- 3. Coordenadas y radar -->
+    <!-- 3. Coordenadas y mapa -->
     <div class="card block-gap" *ngIf="reading || locating">
       <div class="card-head">
         <div class="row">
@@ -116,27 +116,28 @@
           <a class="link small" [href]="mapUrl(r.latitude, r.longitude)" target="_blank" rel="noopener">Ver en el mapa</a>
         </div>
 
-        <!-- Radar: el negocio al centro y tú como punto -->
-        <figure class="radar" *ngIf="radar as rd">
-          <svg viewBox="0 0 200 200" role="img" [attr.aria-label]="'Estás a ' + (distance | number: '1.0-0') + ' metros del negocio'">
-            <circle cx="100" cy="100" r="96" class="ring" />
-            <circle cx="100" cy="100" r="64" class="ring" />
-            <circle cx="100" cy="100" r="32" class="ring" />
-            <line x1="100" y1="4" x2="100" y2="196" class="axis" />
-            <line x1="4" y1="100" x2="196" y2="100" class="axis" />
-            <circle cx="100" cy="100" [attr.r]="rd.fence" class="fence" [class.ok]="inside" />
-            <rect x="94" y="94" width="12" height="12" rx="3" class="shop" />
-            <circle [attr.cx]="rd.x" [attr.cy]="rd.y" [attr.r]="rd.acc" class="acc" />
-            <circle [attr.cx]="rd.x" [attr.cy]="rd.y" r="5.5" class="me" [class.out]="rd.outOfView" />
-            <text x="100" y="14" class="north">N</text>
-          </svg>
+        <!-- Mapa de calles: el negocio con su radio y tú con tu margen de error -->
+        <figure class="street">
+          <app-street-map [center]="location" [radius]="location?.radius_m ?? null" [me]="mapMe" [inside]="location ? inside : null" [label]="location?.name || ''" [height]="300"></app-street-map>
           <figcaption class="small muted">
-            <span class="key shop"></span>{{ location?.name }}
+            <span class="key shop"></span>{{ location?.name || 'Negocio' }}
             <span class="key me"></span>Tú
-            · borde ≈ {{ rd.scale }} m<span *ngIf="rd.outOfView"> (estás más lejos)</span>
+            <span *ngIf="distance !== null"> · a {{ distance | number: '1.0-0' }} m</span>
+            <a class="link" [href]="directionsUrl(r.latitude, r.longitude)" target="_blank" rel="noopener">Abrir en Google Maps</a>
           </figcaption>
         </figure>
       </div>
+    </div>
+
+    <!-- Mapa del negocio mientras no hay lectura del GPS -->
+    <div class="card card-pad block-gap" *ngIf="location && !reading && !locating">
+      <figure class="street">
+        <app-street-map [center]="location" [radius]="location.radius_m" [label]="location.name" [height]="240"></app-street-map>
+        <figcaption class="small muted">
+          <span class="key shop"></span>{{ location.name }} · radio permitido {{ location.radius_m }} m
+          <a class="link" [href]="mapUrl(location.latitude, location.longitude)" target="_blank" rel="noopener">Abrir en Google Maps</a>
+        </figcaption>
+      </figure>
     </div>
 
     <!-- 4. Registrar llegada / salida -->
@@ -242,7 +243,8 @@
           <input id="c-radius" type="range" min="20" max="500" step="10" [(ngModel)]="config.radius_m" />
           <span class="small faint">Recomendado: 80–150 m. El GPS dentro de edificios puede variar 20–50 m.</span>
         </div>
-        <a class="link small" *ngIf="config.latitude && config.longitude" [href]="mapUrl(config.latitude, config.longitude)" target="_blank" rel="noopener">Revisar el punto en el mapa</a>
+        <app-street-map *ngIf="configPoint as cp" [center]="cp" [radius]="config.radius_m" [label]="config.name" [height]="220"></app-street-map>
+        <a class="link small" *ngIf="config.latitude && config.longitude" [href]="mapUrl(config.latitude, config.longitude)" target="_blank" rel="noopener">Revisar el punto en Google Maps</a>
         <div class="form-error" *ngIf="configError">{{ configError }}</div>
       </div>
       <div class="modal-foot">

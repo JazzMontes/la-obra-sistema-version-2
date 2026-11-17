@@ -42,6 +42,24 @@ supabase-bridge.ts ──HTTPS──▶ Supabase ──▶ public.la_obra_v2_api
 
 ---
 
+## Actualización (noviembre 2026)
+
+Para aplicarla en tu Supabase: **SQL Editor → New query → pega `supabase/instalar_todo.sql` → Run**. Solo agrega columnas y una tabla (`input_units`); no borra ni modifica tus datos. Luego `git push` como siempre.
+
+| Mejora | Dónde |
+|---|---|
+| El navegador ofrece guardar y rellenar usuario y contraseña | Inicio de sesión |
+| Foto de perfil de cada usuario | Mi perfil (se ve en el menú y en Usuarios) |
+| Mapa de calles con el negocio, el radio y tu ubicación (OpenStreetMap) + "Abrir en Google Maps" | Asistencia |
+| Comisión de la terminal (Tarjeta = 4 %, editable) al cobrar y en Reportes | Métodos de pago, Punto de venta, Pedidos, Reportes |
+| Buscar insumos y preparaciones escribiendo su nombre | Preparaciones, Productos (receta), Compras, Mermas |
+| Otras medidas por insumo (ej. tomate por pieza o por g; mostaza por g o por cucharada) | Insumos → Otras medidas |
+| Registrar un insumo nuevo sin salir de la preparación | Preparaciones |
+| Se quitó "Siempre / Solo para llevar / Solo comer aquí" de la receta | Productos |
+| Capturar lo que hay hoy de varios insumos, sin costos | Inventario → Capturar existencias |
+
+---
+
 ## 2. Publicarla, paso a paso
 
 ### Paso 0 · Respaldar la versión 1

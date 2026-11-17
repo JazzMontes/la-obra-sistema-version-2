@@ -328,6 +328,14 @@ begin
   end loop;
 end $$;
 
+-- Otras medidas de un insumo: [{id, name, unit_amount, base_amount, factor}] (factor = unidades principales por 1 de esta medida)
+create or replace function la_obra_v2.input_units_json(p_input int)
+returns jsonb language sql stable as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'name', u.name, 'unit_amount', u.unit_amount::float8,
+           'base_amount', u.base_amount::float8, 'factor', (u.base_amount / u.unit_amount)::float8) order by lower(u.name), u.id), '[]'::jsonb)
+    from la_obra_v2.input_units u where u.input_id = p_input;
+$$;
+
 create or replace function la_obra_v2.inv_list()
 returns jsonb language sql stable as $$
   select coalesce(jsonb_agg(row_to_json(t)::jsonb order by t.name, t.id), '[]'::jsonb) from (
@@ -335,7 +343,8 @@ returns jsonb language sql stable as $$
            round(s.stock, 3) as stock, la_obra_v2.fmt_ts(s.last_purchase_at) as last_purchase_at,
            round(c.cost, 4) as unit_cost,
            case when c.cost is null then null else round(greatest(0, round(s.stock, 3)) * c.cost, 2) end as stock_value,
-           case when round(s.stock, 3) <= 0 then 'out' when s.min_stock is not null and round(s.stock, 3) <= s.min_stock then 'low' else 'ok' end as level
+           case when round(s.stock, 3) <= 0 then 'out' when s.min_stock is not null and round(s.stock, 3) <= s.min_stock then 'low' else 'ok' end as level,
+           la_obra_v2.input_units_json(s.id) as units
       from (select i.id, i.name, i.unit, i.status, i.package_type, i.package_quantity, i.package_content_unit, i.min_stock,
                    coalesce(sum(m.quantity), 0) as stock,
                    max(case when m.movement_type = 'purchase' then m.created_at end) as last_purchase_at
@@ -397,4 +406,91 @@ create or replace function la_obra_v2.last_attendance_today(p_user int)
 returns jsonb language sql stable as $$
   select la_obra_v2.js(a) from (select id, type, created_at from la_obra_v2.attendance
     where user_id = p_user and created_at::date = current_date order by created_at desc, id desc limit 1) a;
+$$;
+
+-- ---------- Mejoras (noviembre 2026) ----------
+
+-- Cantidad de un ingrediente capturada en cualquiera de las medidas del insumo.
+-- p_item: {quantity, unit_id?}. Si trae unit_id, "quantity" está en esa medida y se convierte
+-- a la unidad principal; si no, "quantity" ya está en la unidad principal (como antes).
+create or replace function la_obra_v2.item_quantity(p_input int, p_item jsonb,
+  out o_qty numeric, out o_unit_id int, out o_unit_qty numeric)
+language plpgsql as $$
+declare v_q jsonb := coalesce(nullif(p_item -> 'unit_quantity', 'null'::jsonb), p_item -> 'quantity'); un la_obra_v2.input_units;
+begin
+  if not la_obra_v2.is_num(v_q) or la_obra_v2.num(v_q) <= 0 then perform la_obra_v2.fail(422, 'Indica la cantidad de cada ingrediente'); end if;
+  if la_obra_v2.not_empty(p_item -> 'unit_id') then
+    o_unit_id := la_obra_v2.positive_id(p_item -> 'unit_id', 'Medida inválida');
+    select * into un from la_obra_v2.input_units where id = o_unit_id;
+    if un.id is null or un.input_id <> p_input then perform la_obra_v2.fail(422, 'La medida elegida no corresponde al insumo'); end if;
+    o_unit_qty := round(la_obra_v2.num(v_q), 3);
+    o_qty := round(o_unit_qty * un.base_amount / un.unit_amount, 3);
+    if o_qty <= 0 then perform la_obra_v2.fail(422, 'La cantidad es demasiado pequeña'); end if;
+  else
+    o_unit_id := null; o_unit_qty := null;
+    o_qty := round(la_obra_v2.num(v_q), 3);
+    if o_qty <= 0 then perform la_obra_v2.fail(422, 'Indica la cantidad de cada ingrediente'); end if;
+  end if;
+end $$;
+
+-- Guarda las otras medidas de un insumo. p_units: [{id?, name, unit_amount, base_amount}]
+-- Conserva las que siguen (por id), actualiza las recetas que las usan si cambió la equivalencia
+-- y, si se quita una medida, sus ingredientes quedan con la misma cantidad en la unidad principal.
+create or replace function la_obra_v2.save_input_units(p_input int, p_units jsonb)
+returns void language plpgsql as $$
+declare v_base text; it jsonb; v_name text; v_ua numeric; v_ba numeric; v_id int; v_keep int[] := '{}'; v_names text[] := '{}';
+begin
+  if p_units is null or jsonb_typeof(p_units) = 'null' then return; end if;
+  if jsonb_typeof(p_units) <> 'array' then perform la_obra_v2.fail(422, 'Medidas inválidas'); end if;
+  select lower(btrim(unit)) into v_base from la_obra_v2.inputs where id = p_input;
+  -- Validar todo antes de escribir
+  for it in select * from jsonb_array_elements(p_units) loop
+    v_name := la_obra_v2.jstr(it -> 'name');
+    if v_name = '' or char_length(v_name) > 30 then perform la_obra_v2.fail(422, 'Escribe el nombre de cada medida (máximo 30 letras)'); end if;
+    if lower(v_name) = v_base then perform la_obra_v2.fail(422, '"' || v_name || '" ya es la unidad principal del insumo'); end if;
+    if lower(v_name) = any(v_names) then perform la_obra_v2.fail(422, 'La medida "' || v_name || '" está repetida'); end if;
+    v_names := v_names || lower(v_name);
+    if not la_obra_v2.is_num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)) or la_obra_v2.num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)) <= 0
+       or not la_obra_v2.is_num(it -> 'base_amount') or la_obra_v2.num(it -> 'base_amount') <= 0 then
+      perform la_obra_v2.fail(422, 'Indica a cuánto equivale la medida "' || v_name || '"');
+    end if;
+    if la_obra_v2.not_empty(it -> 'id') then
+      v_id := la_obra_v2.positive_id(it -> 'id', 'Medida inválida');
+      if not exists(select 1 from la_obra_v2.input_units where id = v_id and input_id = p_input) then perform la_obra_v2.fail(422, 'Medida inválida'); end if;
+      v_keep := v_keep || v_id;
+    end if;
+  end loop;
+  -- Medidas quitadas: sus ingredientes conservan la cantidad (ya está en la unidad principal)
+  update la_obra_v2.preparation_inputs set unit_id = null, unit_quantity = null
+   where unit_id in (select id from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep)));
+  update la_obra_v2.product_components set unit_id = null, unit_quantity = null
+   where unit_id in (select id from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep)));
+  delete from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep));
+  -- Evitar choque de nombres al renombrar
+  update la_obra_v2.input_units set name = '~' || id where input_id = p_input;
+  for it in select * from jsonb_array_elements(p_units) loop
+    v_name := la_obra_v2.jstr(it -> 'name');
+    v_ua := round(la_obra_v2.num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)), 3);
+    v_ba := round(la_obra_v2.num(it -> 'base_amount'), 4);
+    if v_ua <= 0 or v_ba <= 0 then perform la_obra_v2.fail(422, 'Indica a cuánto equivale la medida "' || v_name || '"'); end if;
+    if la_obra_v2.not_empty(it -> 'id') then
+      v_id := la_obra_v2.num(it -> 'id')::int;
+      update la_obra_v2.input_units set name = v_name, unit_amount = v_ua, base_amount = v_ba where id = v_id;
+      -- Si cambió la equivalencia, las recetas capturadas en esta medida se recalculan
+      update la_obra_v2.preparation_inputs set quantity = greatest(round(unit_quantity * v_ba / v_ua, 3), 0.001)
+       where unit_id = v_id and unit_quantity is not null;
+      update la_obra_v2.product_components set quantity = greatest(round(unit_quantity * v_ba / v_ua, 3), 0.001)
+       where unit_id = v_id and unit_quantity is not null;
+    else
+      insert into la_obra_v2.input_units(input_id, name, unit_amount, base_amount) values (p_input, v_name, v_ua, v_ba);
+    end if;
+  end loop;
+end $$;
+
+-- Comisión que cobra la terminal por un pago (null si el método no tiene comisión)
+create or replace function la_obra_v2.payment_commission(p_method int, p_amount numeric)
+returns numeric language sql stable as $$
+  select case when coalesce(pm.commission_percent, 0) > 0 and coalesce(p_amount, 0) > 0
+              then round(p_amount * pm.commission_percent / 100, 2) end
+    from la_obra_v2.payment_methods pm where pm.id = p_method;
 $$;

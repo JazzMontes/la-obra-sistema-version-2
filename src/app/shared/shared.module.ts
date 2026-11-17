@@ -20,12 +20,15 @@ import { DateMxPipe, MoneyPipe, QtyPipe } from './format.pipes';
 import { InputFormComponent } from './input-form.component';
 import { PhotoPickerComponent } from './photo-picker.component';
 import { ApiImageDirective } from './api-image.directive';
+import { UserAvatarComponent } from './user-avatar.component';
+import { SearchSelectComponent } from './search-select.component';
+import { StreetMapComponent } from './street-map.component';
 
 const IONIC = [IonButtons, IonContent, IonHeader, IonMenuButton, IonModal, IonRefresher, IonRefresherContent, IonTitle, IonToolbar];
 
 @NgModule({
-  declarations: [IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective],
+  declarations: [IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent],
   imports: [CommonModule, FormsModule, RouterModule, ...IONIC],
-  exports: [CommonModule, FormsModule, RouterModule, ...IONIC, IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective],
+  exports: [CommonModule, FormsModule, RouterModule, ...IONIC, IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent],
 })
 export class SharedModule {}

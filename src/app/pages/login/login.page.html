@@ -13,7 +13,8 @@
     </aside>
 
     <main class="panel">
-      <form class="form" (ngSubmit)="login()">
+      <!-- autocomplete + name: el navegador (o Google en Android) ofrece guardar la contraseña y la rellena la próxima vez -->
+      <form class="form" (ngSubmit)="login()" autocomplete="on">
         <div class="mobile-brand">
           <div class="mark">LO</div>
           <span>La Obra</span>
@@ -23,7 +24,8 @@
 
         <div class="field">
           <label for="lg-user">Usuario</label>
-          <input id="lg-user" name="username" class="input" [(ngModel)]="username" autocomplete="username" autocapitalize="off" />
+          <input id="lg-user" name="username" class="input" type="text" [(ngModel)]="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" list="lg-recent" />
+          <datalist id="lg-recent"><option *ngFor="let u of recentUsers" [value]="u"></option></datalist>
         </div>
         <div class="field">
           <label for="lg-pass">Contraseña</label>
@@ -42,6 +44,7 @@
         </div>
 
         <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Entrando…' : 'Entrar' }}</button>
+        <button type="button" class="link small saved-link" *ngIf="canUseSaved" (click)="useSaved(true)">Usar una contraseña guardada en este dispositivo</button>
 
       </form>
     </main>

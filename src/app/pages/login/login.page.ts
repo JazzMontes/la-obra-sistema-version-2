@@ -40,8 +40,47 @@ export class LoginPage {
     private router: Router
   ) {}
 
+  // Usuarios que ya entraron en este dispositivo (solo el nombre de usuario, nunca la contraseña)
+  recentUsers: string[] = [];
+  // El navegador permite leer contraseñas guardadas (Chrome, Edge, Chrome de Android)
+  readonly canUseSaved = typeof window !== 'undefined' && 'PasswordCredential' in window && !!navigator.credentials;
+
   ionViewWillEnter() {
     this.serverHost = this.config.getHost();
+    this.recentUsers = readRecentUsers();
+    if (!this.username && this.recentUsers.length) this.username = this.recentUsers[0];
+  }
+
+  ionViewDidEnter() {
+    // Si el navegador tiene la contraseña guardada, se rellena sola (sin entrar automáticamente)
+    void this.useSaved(false);
+  }
+
+  // Pide al administrador de contraseñas del navegador la cuenta guardada para este sitio
+  async useSaved(ask: boolean) {
+    if (!this.canUseSaved) return;
+    try {
+      const cred: any = await navigator.credentials.get({ password: true, mediation: ask ? 'required' : 'optional' } as any);
+      if (cred && cred.type === 'password' && cred.id) {
+        this.username = cred.id;
+        this.password = cred.password ?? '';
+        this.refresher.schedule();
+      }
+    } catch {
+      // El usuario cerró el aviso o el navegador no lo permite: se escribe a mano
+    }
+  }
+
+  // Después de entrar: el navegador ofrece "¿Guardar contraseña?" y se recuerda el usuario
+  private async rememberLogin(user: any, password: string) {
+    saveRecentUser(this.username.trim());
+    if (!this.canUseSaved) return;
+    try {
+      const PC = (window as any).PasswordCredential;
+      await navigator.credentials.store(new PC({ id: this.username.trim(), password, name: user?.name || this.username.trim() }));
+    } catch {
+      // Sin soporte o el usuario dijo que no
+    }
   }
 
   async testServer(silent = false) {
@@ -81,6 +120,7 @@ export class LoginPage {
     try {
       const r = await this.auth.login(this.username, this.password);
       if (r.success) {
+        await this.rememberLogin(r.user, this.password);
         this.password = '';
         await this.router.navigateByUrl(r.user.must_change_password ? '/change-password' : '/home', { replaceUrl: true });
       } else {
@@ -92,5 +132,26 @@ export class LoginPage {
     } finally {
       this.loading = false;
     }
+  }
+}
+
+const RECENT_KEY = 'la_obra_recent_users';
+
+function readRecentUsers(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x).slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentUser(username: string) {
+  if (!username) return;
+  try {
+    const list = [username, ...readRecentUsers().filter(u => u.toLowerCase() !== username.toLowerCase())].slice(0, 5);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {
+    // Almacenamiento no disponible
   }
 }

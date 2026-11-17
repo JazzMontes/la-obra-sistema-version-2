@@ -302,6 +302,41 @@ insert into la_obra_v2.payment_methods (name, status) values
   ('Efectivo','active'), ('Transferencia','active'), ('Tarjeta','active')
 on conflict (name) do nothing;
 
+-- ---------- Mejoras (noviembre 2026) ----------
+-- Solo AGREGAN columnas y tablas; no borran ni cambian lo que ya está guardado.
+-- Todas las columnas nuevas aceptan vacío (null) para que los respaldos anteriores se puedan restaurar.
+
+-- Foto de perfil de cada usuario (la imagen vive en la_obra_v2.files, carpeta uploads/avatars/)
+alter table la_obra_v2.users add column if not exists avatar_path varchar(255) null;
+
+-- Otras medidas de un insumo: "1 pieza de tomate = 120 g", "1 cucharada de mostaza = 15 g".
+-- unit_amount de "name" equivalen a base_amount de la unidad principal del insumo (inputs.unit).
+-- El inventario y los costos siguen en la unidad principal; estas medidas solo sirven para capturar.
+create table if not exists la_obra_v2.input_units (
+  id          serial primary key,
+  input_id    int not null references la_obra_v2.inputs(id) on delete cascade,
+  name        varchar(30) not null,
+  unit_amount numeric(12,3) not null default 1 check (unit_amount > 0),
+  base_amount numeric(14,4) not null check (base_amount > 0),
+  created_at  timestamp null default localtimestamp
+);
+create unique index if not exists uq_input_units_name on la_obra_v2.input_units(input_id, lower(name));
+
+-- En qué medida se capturó cada ingrediente. "quantity" sigue guardando la cantidad en la unidad
+-- principal (la que usan costos e inventario), así que lo anterior funciona igual.
+alter table la_obra_v2.preparation_inputs add column if not exists unit_id int null references la_obra_v2.input_units(id) on delete set null;
+alter table la_obra_v2.preparation_inputs add column if not exists unit_quantity numeric(12,3) null;
+alter table la_obra_v2.product_components add column if not exists unit_id int null references la_obra_v2.input_units(id) on delete set null;
+alter table la_obra_v2.product_components add column if not exists unit_quantity numeric(12,3) null;
+
+-- Comisión de la terminal por método de pago (porcentaje) y lo que se descontó en cada cobro
+alter table la_obra_v2.payment_methods add column if not exists commission_percent numeric(5,2) null
+  check (commission_percent is null or (commission_percent >= 0 and commission_percent < 100));
+alter table la_obra_v2.payments add column if not exists commission_amount numeric(10,2) null;
+-- Tarjeta: 4 % (solo si nunca se ha configurado; si después lo cambias, no se vuelve a tocar)
+update la_obra_v2.payment_methods set commission_percent = 4.00
+ where commission_percent is null and lower(name) like '%tarjeta%';
+
 -- ---------- Nadie entra a las tablas directamente ----------
 -- Seguridad por fila activada y sin políticas: ni la clave pública ni usuarios de Supabase
 -- pueden leer o escribir. Solo la función pública la_obra_v2_api (security definer).
@@ -644,6 +679,14 @@ begin
   end loop;
 end $$;
 
+-- Otras medidas de un insumo: [{id, name, unit_amount, base_amount, factor}] (factor = unidades principales por 1 de esta medida)
+create or replace function la_obra_v2.input_units_json(p_input int)
+returns jsonb language sql stable as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'name', u.name, 'unit_amount', u.unit_amount::float8,
+           'base_amount', u.base_amount::float8, 'factor', (u.base_amount / u.unit_amount)::float8) order by lower(u.name), u.id), '[]'::jsonb)
+    from la_obra_v2.input_units u where u.input_id = p_input;
+$$;
+
 create or replace function la_obra_v2.inv_list()
 returns jsonb language sql stable as $$
   select coalesce(jsonb_agg(row_to_json(t)::jsonb order by t.name, t.id), '[]'::jsonb) from (
@@ -651,7 +694,8 @@ returns jsonb language sql stable as $$
            round(s.stock, 3) as stock, la_obra_v2.fmt_ts(s.last_purchase_at) as last_purchase_at,
            round(c.cost, 4) as unit_cost,
            case when c.cost is null then null else round(greatest(0, round(s.stock, 3)) * c.cost, 2) end as stock_value,
-           case when round(s.stock, 3) <= 0 then 'out' when s.min_stock is not null and round(s.stock, 3) <= s.min_stock then 'low' else 'ok' end as level
+           case when round(s.stock, 3) <= 0 then 'out' when s.min_stock is not null and round(s.stock, 3) <= s.min_stock then 'low' else 'ok' end as level,
+           la_obra_v2.input_units_json(s.id) as units
       from (select i.id, i.name, i.unit, i.status, i.package_type, i.package_quantity, i.package_content_unit, i.min_stock,
                    coalesce(sum(m.quantity), 0) as stock,
                    max(case when m.movement_type = 'purchase' then m.created_at end) as last_purchase_at
@@ -715,6 +759,93 @@ returns jsonb language sql stable as $$
     where user_id = p_user and created_at::date = current_date order by created_at desc, id desc limit 1) a;
 $$;
 
+-- ---------- Mejoras (noviembre 2026) ----------
+
+-- Cantidad de un ingrediente capturada en cualquiera de las medidas del insumo.
+-- p_item: {quantity, unit_id?}. Si trae unit_id, "quantity" está en esa medida y se convierte
+-- a la unidad principal; si no, "quantity" ya está en la unidad principal (como antes).
+create or replace function la_obra_v2.item_quantity(p_input int, p_item jsonb,
+  out o_qty numeric, out o_unit_id int, out o_unit_qty numeric)
+language plpgsql as $$
+declare v_q jsonb := coalesce(nullif(p_item -> 'unit_quantity', 'null'::jsonb), p_item -> 'quantity'); un la_obra_v2.input_units;
+begin
+  if not la_obra_v2.is_num(v_q) or la_obra_v2.num(v_q) <= 0 then perform la_obra_v2.fail(422, 'Indica la cantidad de cada ingrediente'); end if;
+  if la_obra_v2.not_empty(p_item -> 'unit_id') then
+    o_unit_id := la_obra_v2.positive_id(p_item -> 'unit_id', 'Medida inválida');
+    select * into un from la_obra_v2.input_units where id = o_unit_id;
+    if un.id is null or un.input_id <> p_input then perform la_obra_v2.fail(422, 'La medida elegida no corresponde al insumo'); end if;
+    o_unit_qty := round(la_obra_v2.num(v_q), 3);
+    o_qty := round(o_unit_qty * un.base_amount / un.unit_amount, 3);
+    if o_qty <= 0 then perform la_obra_v2.fail(422, 'La cantidad es demasiado pequeña'); end if;
+  else
+    o_unit_id := null; o_unit_qty := null;
+    o_qty := round(la_obra_v2.num(v_q), 3);
+    if o_qty <= 0 then perform la_obra_v2.fail(422, 'Indica la cantidad de cada ingrediente'); end if;
+  end if;
+end $$;
+
+-- Guarda las otras medidas de un insumo. p_units: [{id?, name, unit_amount, base_amount}]
+-- Conserva las que siguen (por id), actualiza las recetas que las usan si cambió la equivalencia
+-- y, si se quita una medida, sus ingredientes quedan con la misma cantidad en la unidad principal.
+create or replace function la_obra_v2.save_input_units(p_input int, p_units jsonb)
+returns void language plpgsql as $$
+declare v_base text; it jsonb; v_name text; v_ua numeric; v_ba numeric; v_id int; v_keep int[] := '{}'; v_names text[] := '{}';
+begin
+  if p_units is null or jsonb_typeof(p_units) = 'null' then return; end if;
+  if jsonb_typeof(p_units) <> 'array' then perform la_obra_v2.fail(422, 'Medidas inválidas'); end if;
+  select lower(btrim(unit)) into v_base from la_obra_v2.inputs where id = p_input;
+  -- Validar todo antes de escribir
+  for it in select * from jsonb_array_elements(p_units) loop
+    v_name := la_obra_v2.jstr(it -> 'name');
+    if v_name = '' or char_length(v_name) > 30 then perform la_obra_v2.fail(422, 'Escribe el nombre de cada medida (máximo 30 letras)'); end if;
+    if lower(v_name) = v_base then perform la_obra_v2.fail(422, '"' || v_name || '" ya es la unidad principal del insumo'); end if;
+    if lower(v_name) = any(v_names) then perform la_obra_v2.fail(422, 'La medida "' || v_name || '" está repetida'); end if;
+    v_names := v_names || lower(v_name);
+    if not la_obra_v2.is_num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)) or la_obra_v2.num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)) <= 0
+       or not la_obra_v2.is_num(it -> 'base_amount') or la_obra_v2.num(it -> 'base_amount') <= 0 then
+      perform la_obra_v2.fail(422, 'Indica a cuánto equivale la medida "' || v_name || '"');
+    end if;
+    if la_obra_v2.not_empty(it -> 'id') then
+      v_id := la_obra_v2.positive_id(it -> 'id', 'Medida inválida');
+      if not exists(select 1 from la_obra_v2.input_units where id = v_id and input_id = p_input) then perform la_obra_v2.fail(422, 'Medida inválida'); end if;
+      v_keep := v_keep || v_id;
+    end if;
+  end loop;
+  -- Medidas quitadas: sus ingredientes conservan la cantidad (ya está en la unidad principal)
+  update la_obra_v2.preparation_inputs set unit_id = null, unit_quantity = null
+   where unit_id in (select id from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep)));
+  update la_obra_v2.product_components set unit_id = null, unit_quantity = null
+   where unit_id in (select id from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep)));
+  delete from la_obra_v2.input_units where input_id = p_input and not (id = any(v_keep));
+  -- Evitar choque de nombres al renombrar
+  update la_obra_v2.input_units set name = '~' || id where input_id = p_input;
+  for it in select * from jsonb_array_elements(p_units) loop
+    v_name := la_obra_v2.jstr(it -> 'name');
+    v_ua := round(la_obra_v2.num(coalesce(nullif(it -> 'unit_amount', 'null'::jsonb), '1'::jsonb)), 3);
+    v_ba := round(la_obra_v2.num(it -> 'base_amount'), 4);
+    if v_ua <= 0 or v_ba <= 0 then perform la_obra_v2.fail(422, 'Indica a cuánto equivale la medida "' || v_name || '"'); end if;
+    if la_obra_v2.not_empty(it -> 'id') then
+      v_id := la_obra_v2.num(it -> 'id')::int;
+      update la_obra_v2.input_units set name = v_name, unit_amount = v_ua, base_amount = v_ba where id = v_id;
+      -- Si cambió la equivalencia, las recetas capturadas en esta medida se recalculan
+      update la_obra_v2.preparation_inputs set quantity = greatest(round(unit_quantity * v_ba / v_ua, 3), 0.001)
+       where unit_id = v_id and unit_quantity is not null;
+      update la_obra_v2.product_components set quantity = greatest(round(unit_quantity * v_ba / v_ua, 3), 0.001)
+       where unit_id = v_id and unit_quantity is not null;
+    else
+      insert into la_obra_v2.input_units(input_id, name, unit_amount, base_amount) values (p_input, v_name, v_ua, v_ba);
+    end if;
+  end loop;
+end $$;
+
+-- Comisión que cobra la terminal por un pago (null si el método no tiene comisión)
+create or replace function la_obra_v2.payment_commission(p_method int, p_amount numeric)
+returns numeric language sql stable as $$
+  select case when coalesce(pm.commission_percent, 0) > 0 and coalesce(p_amount, 0) > 0
+              then round(p_amount * pm.commission_percent / 100, 2) end
+    from la_obra_v2.payment_methods pm where pm.id = p_method;
+$$;
+
 -- >>>>>>>>>> 03_api_auth_usuarios.sql
 -- =====================================================================
 -- La Obra v2 · 03 · auth/* y users/*
@@ -742,7 +873,7 @@ begin
   delete from la_obra_v2.sessions where expires_at < localtimestamp - interval '1 day';
   return la_obra_v2.ok(200, 'Inicio de sesión correcto', jsonb_build_object('token', v_token,
     'user', jsonb_build_object('id', u.id, 'name', u.name, 'username', u.username, 'email', u.email,
-                               'role', u.role, 'must_change_password', u.must_change_password)));
+                               'role', u.role, 'must_change_password', u.must_change_password, 'avatar_path', u.avatar_path)));
 end $$;
 
 -- auth/logout.php
@@ -767,7 +898,8 @@ begin
   u := la_obra_v2.auth_long(t);
   if m = 'GET' then
     return la_obra_v2.ok(200, 'Sesión activa', jsonb_build_object('user', jsonb_build_object('id', u.id, 'name', u.name,
-      'username', u.username, 'email', u.email, 'role', u.role, 'status', u.status, 'must_change_password', u.must_change_password)));
+      'username', u.username, 'email', u.email, 'role', u.role, 'status', u.status, 'must_change_password', u.must_change_password,
+      'avatar_path', u.avatar_path)));
   end if;
   v_name := la_obra_v2.jstr(b -> 'name');
   v_username := la_obra_v2.jstr(b -> 'username');
@@ -779,7 +911,24 @@ begin
   end if;
   update la_obra_v2.users set name = v_name, username = v_username, email = v_email, updated_at = localtimestamp where id = u.id;
   return la_obra_v2.ok(200, 'Perfil actualizado correctamente', jsonb_build_object('user', jsonb_build_object('id', u.id,
-    'name', v_name, 'username', v_username, 'email', v_email, 'role', u.role, 'status', u.status)));
+    'name', v_name, 'username', v_username, 'email', v_email, 'role', u.role, 'status', u.status, 'avatar_path', u.avatar_path)));
+end $$;
+
+-- auth/avatar.php · foto de perfil del usuario que inició sesión
+--   POST {image: data URL} → la guarda (reemplaza la anterior) · DELETE → la quita
+create or replace function la_obra_v2.ep_auth__avatar(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; v_path text;
+begin
+  if m not in ('POST', 'DELETE') then perform la_obra_v2.fail(405, 'Método no permitido'); end if;
+  u := la_obra_v2.auth_long(t);
+  if m = 'POST' then
+    v_path := la_obra_v2.save_image(la_obra_v2.body(b) -> 'image', 'avatars', 'u' || u.id);
+  end if;
+  update la_obra_v2.users set avatar_path = v_path, updated_at = localtimestamp where id = u.id;
+  perform la_obra_v2.delete_file(u.avatar_path, 'avatars');
+  return la_obra_v2.ok(200, case when m = 'POST' then 'Foto de perfil actualizada' else 'Foto de perfil eliminada' end,
+    jsonb_build_object('avatar_path', v_path));
 end $$;
 
 -- auth/password.php
@@ -826,7 +975,8 @@ begin
   perform la_obra_v2.auth_long(t, true, 'No tienes permisos para consultar usuarios');
   if v_status <> '' and v_status not in ('pending','active','rejected','inactive') then perform la_obra_v2.fail(422, 'El estado no es válido'); end if;
   return la_obra_v2.ok(200, 'Usuarios consultados', jsonb_build_object('users', (
-    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'username', username, 'email', email, 'status', status, 'role', role) order by id), '[]')
+    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'username', username, 'email', email, 'status', status, 'role', role,
+             'avatar_path', avatar_path) order by id), '[]')
       from la_obra_v2.users where v_status = '' or status = v_status)));
 end $$;
 
@@ -1023,7 +1173,19 @@ begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth_long(t);
   return la_obra_v2.ok(200, 'Métodos de pago', jsonb_build_object('payment_methods', (
-    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'status', status) order by name, id), '[]') from la_obra_v2.payment_methods)));
+    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'status', status,
+             'commission_percent', coalesce(commission_percent, 0)::float8) order by name, id), '[]') from la_obra_v2.payment_methods)));
+end $$;
+
+-- Porcentaje de comisión válido (0 a 99.99, dos decimales); p_default si no viene
+create or replace function la_obra_v2.commission_value(v jsonb, p_default numeric default 0)
+returns numeric language plpgsql as $$
+begin
+  if v is null or jsonb_typeof(v) = 'null' or (jsonb_typeof(v) = 'string' and btrim(v #>> '{}') = '') then return p_default; end if;
+  if not la_obra_v2.is_num(v) or la_obra_v2.num(v) < 0 or la_obra_v2.num(v) >= 100 then
+    perform la_obra_v2.fail(422, 'La comisión debe ser un porcentaje entre 0 y 99.99');
+  end if;
+  return round(la_obra_v2.num(v), 2);
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__create(m text, q jsonb, b jsonb, t text)
@@ -1034,8 +1196,10 @@ begin
   perform la_obra_v2.auth_long(t, true);
   if v_name = '' then perform la_obra_v2.fail(422, 'El nombre es obligatorio'); end if;
   if exists(select 1 from la_obra_v2.payment_methods where lower(name) = lower(v_name)) then perform la_obra_v2.fail(409, 'El método de pago ya existe'); end if;
-  insert into la_obra_v2.payment_methods(name, status) values (v_name, 'active') returning id into v_id;
-  return la_obra_v2.ok(201, 'Método de pago registrado correctamente', jsonb_build_object('payment_method', jsonb_build_object('id', v_id, 'name', v_name, 'status', 'active')));
+  insert into la_obra_v2.payment_methods(name, status, commission_percent)
+  values (v_name, 'active', la_obra_v2.commission_value(b -> 'commission_percent', case when lower(v_name) like '%tarjeta%' then 4 else 0 end)) returning id into v_id;
+  return la_obra_v2.ok(201, 'Método de pago registrado correctamente', jsonb_build_object('payment_method', jsonb_build_object('id', v_id, 'name', v_name, 'status', 'active',
+    'commission_percent', (select commission_percent::float8 from la_obra_v2.payment_methods where id = v_id))));
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__status(m text, q jsonb, b jsonb, t text)
@@ -1051,6 +1215,25 @@ begin
   if not exists(select 1 from la_obra_v2.payment_methods where id = v_id) then perform la_obra_v2.fail(404, 'Método de pago no encontrado'); end if;
   update la_obra_v2.payment_methods set status = v_status where id = v_id;
   return la_obra_v2.ok(200, 'Estado del método de pago actualizado correctamente');
+end $$;
+
+-- payment-methods/commission.php · PATCH {id, commission_percent}: comisión de la terminal (ej. 4 para tarjeta)
+-- Aplica a los cobros que se registren desde ese momento; los anteriores conservan la suya.
+create or replace function la_obra_v2.ep_payment_methods__commission(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare v_id int; v_pct numeric;
+begin
+  perform la_obra_v2.method(m, 'PATCH');
+  perform la_obra_v2.auth_long(t, true);
+  b := la_obra_v2.body(b);
+  v_id := la_obra_v2.positive_id(b -> 'id');
+  if not exists(select 1 from la_obra_v2.payment_methods where id = v_id) then perform la_obra_v2.fail(404, 'Método de pago no encontrado'); end if;
+  if not (b ? 'commission_percent') then perform la_obra_v2.fail(422, 'Indica la comisión'); end if;
+  v_pct := la_obra_v2.commission_value(b -> 'commission_percent', 0);
+  update la_obra_v2.payment_methods set commission_percent = v_pct where id = v_id;
+  return la_obra_v2.ok(200, 'Comisión actualizada', jsonb_build_object('payment_method', (
+    select jsonb_build_object('id', id, 'name', name, 'status', status, 'commission_percent', commission_percent::float8)
+      from la_obra_v2.payment_methods where id = v_id)));
 end $$;
 
 create or replace function la_obra_v2.ep_payment_methods__delete(m text, q jsonb, b jsonb, t text)
@@ -1108,7 +1291,7 @@ declare v_path text := coalesce(la_obra_v2.jtext(q -> 'path'), ''); f la_obra_v2
 begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth(t);
-  if v_path !~ '^uploads/(products|tickets)/[A-Za-z0-9_.-]+$' then perform la_obra_v2.fail(422, 'Ruta de imagen inválida'); end if;
+  if v_path !~ '^uploads/(products|tickets|avatars)/[A-Za-z0-9_.-]+$' then perform la_obra_v2.fail(422, 'Ruta de imagen inválida'); end if;
   select * into f from la_obra_v2.files where path = v_path;
   if f.path is null then perform la_obra_v2.fail(404, 'La imagen no existe en el servidor'); end if;
   return la_obra_v2.ok(200, 'Imagen', jsonb_build_object('data_url', 'data:' || f.mime || ';base64,' || replace(encode(f.data, 'base64'), E'\n', '')));
@@ -1293,7 +1476,7 @@ $$;
 
 create or replace function la_obra_v2.ep_products__save_components(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare v_id int; it jsonb; v_in boolean; v_pr boolean; v_mode text; v_sid int;
+declare v_id int; it jsonb; v_in boolean; v_pr boolean; v_mode text; v_sid int; v_n bigint; v_qty numeric; v_uid int; v_uqty numeric;
 begin
   perform la_obra_v2.method(m, 'PUT');
   perform la_obra_v2.auth(t, true);
@@ -1313,15 +1496,28 @@ begin
     if (v_in and not exists(select 1 from la_obra_v2.inputs where id = v_sid)) or (v_pr and not exists(select 1 from la_obra_v2.preparations where id = v_sid)) then
       perform la_obra_v2.fail(422, 'Componente inexistente');
     end if;
+    -- Insumo capturado en otra medida (pieza, cucharada…): se valida la medida
+    if v_in then perform la_obra_v2.item_quantity(v_sid, it);
+    elsif la_obra_v2.not_empty(it -> 'unit_id') then perform la_obra_v2.fail(422, 'Las preparaciones se capturan en su unidad de rendimiento');
+    end if;
   end loop;
   delete from la_obra_v2.product_components where product_id = v_id;
-  insert into la_obra_v2.product_components(product_id, input_id, preparation_id, quantity, is_estimated, delivery_mode)
-  select v_id,
-         case when la_obra_v2.not_empty(c -> 'input_id') then la_obra_v2.num(c -> 'input_id')::int end,
-         case when la_obra_v2.not_empty(c -> 'preparation_id') then la_obra_v2.num(c -> 'preparation_id')::int end,
-         round(la_obra_v2.num(c -> 'quantity'), 3), la_obra_v2.not_empty(c -> 'is_estimated'),
-         coalesce(la_obra_v2.jtext(c -> 'delivery_mode'), 'always')
-    from jsonb_array_elements(b -> 'components') with ordinality x(c, n) order by n;
+  for it, v_n in select c, n from jsonb_array_elements(b -> 'components') with ordinality x(c, n) order by n loop
+    v_in := la_obra_v2.not_empty(it -> 'input_id');
+    if v_in then
+      select o_qty, o_unit_id, o_unit_qty into v_qty, v_uid, v_uqty from la_obra_v2.item_quantity(la_obra_v2.num(it -> 'input_id')::int, it);
+    else
+      v_qty := round(la_obra_v2.num(it -> 'quantity'), 3); v_uid := null; v_uqty := null;
+    end if;
+    insert into la_obra_v2.product_components(product_id, input_id, preparation_id, quantity, is_estimated, delivery_mode, unit_id, unit_quantity)
+    values (v_id,
+            case when v_in then la_obra_v2.num(it -> 'input_id')::int end,
+            case when la_obra_v2.not_empty(it -> 'preparation_id') then la_obra_v2.num(it -> 'preparation_id')::int end,
+            v_qty,
+            la_obra_v2.not_empty(it -> 'is_estimated'),
+            coalesce(la_obra_v2.jtext(it -> 'delivery_mode'), 'always'),
+            v_uid, v_uqty);
+  end loop;
   return la_obra_v2.ok(200, 'Composición guardada');
 end $$;
 
@@ -1394,7 +1590,8 @@ begin
   perform la_obra_v2.auth_long(t, true);
   return la_obra_v2.ok(200, 'Insumos', jsonb_build_object('inputs', (
     select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'unit', unit, 'status', status, 'package_type', package_type,
-      'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'min_stock', min_stock) order by name, id), '[]')
+      'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'min_stock', min_stock,
+      'units', la_obra_v2.input_units_json(id)) order by name, id), '[]')
     from la_obra_v2.inputs)));
 end $$;
 
@@ -1407,7 +1604,8 @@ begin
   if not la_obra_v2.is_int(q -> 'id') or la_obra_v2.num(q -> 'id') <= 0 then perform la_obra_v2.fail(422, 'El id no es válido'); end if;
   v_id := la_obra_v2.num(q -> 'id')::int;
   select jsonb_build_object('id', id, 'name', name, 'unit', unit, 'status', status, 'package_type', package_type,
-         'package_quantity', package_quantity, 'package_content_unit', package_content_unit) into r from la_obra_v2.inputs where id = v_id;
+         'package_quantity', package_quantity, 'package_content_unit', package_content_unit, 'units', la_obra_v2.input_units_json(id))
+    into r from la_obra_v2.inputs where id = v_id;
   if r is null then perform la_obra_v2.fail(404, 'Insumo no encontrado'); end if;
   return la_obra_v2.ok(200, 'Insumo', jsonb_build_object('input', r));
 end $$;
@@ -1423,8 +1621,10 @@ begin
   if exists(select 1 from la_obra_v2.inputs where lower(name) = lower(v.o_name)) then perform la_obra_v2.fail(409, 'Ya existe un insumo con ese nombre'); end if;
   insert into la_obra_v2.inputs(name, unit, package_type, package_quantity, package_content_unit, min_stock, status)
   values (v.o_name, v.o_unit, v.o_ptype, v.o_pqty, v.o_unit, v.o_min, 'active') returning id into v_id;
+  perform la_obra_v2.save_input_units(v_id, b -> 'units');
   return la_obra_v2.ok(201, 'Insumo registrado correctamente', jsonb_build_object('input', jsonb_build_object(
-    'id', v_id, 'name', v.o_name, 'unit', v.o_unit, 'package_type', v.o_ptype, 'package_quantity', v.o_pqty::float8, 'min_stock', v.o_min, 'status', 'active')));
+    'id', v_id, 'name', v.o_name, 'unit', v.o_unit, 'package_type', v.o_ptype, 'package_quantity', v.o_pqty::float8, 'min_stock', v.o_min, 'status', 'active',
+    'stock', 0, 'unit_cost', null, 'stock_value', null, 'level', 'out', 'units', la_obra_v2.input_units_json(v_id))));
 end $$;
 
 create or replace function la_obra_v2.ep_inputs__update(m text, q jsonb, b jsonb, t text)
@@ -1447,7 +1647,8 @@ begin
   if exists(select 1 from la_obra_v2.inputs where lower(name) = lower(v.o_name) and id <> v_id) then perform la_obra_v2.fail(409, 'Ya existe un insumo con ese nombre'); end if;
   update la_obra_v2.inputs set name = v.o_name, unit = v.o_unit, package_type = v.o_ptype, package_quantity = v.o_pqty,
          package_content_unit = v.o_unit, min_stock = v.o_min where id = v_id;
-  return la_obra_v2.ok(200, 'Insumo actualizado correctamente');
+  if b ? 'units' then perform la_obra_v2.save_input_units(v_id, b -> 'units'); end if;
+  return la_obra_v2.ok(200, 'Insumo actualizado correctamente', jsonb_build_object('units', la_obra_v2.input_units_json(v_id)));
 end $$;
 
 create or replace function la_obra_v2.ep_inputs__activate(m text, q jsonb, b jsonb, t text)
@@ -1645,8 +1846,9 @@ begin
     select coalesce(jsonb_agg(to_jsonb(p) || jsonb_build_object(
       'yield_quantity', p.yield_quantity::float8,
       'inputs', (select coalesce(jsonb_agg(jsonb_build_object('input_id', pi.input_id, 'quantity', pi.quantity::float8, 'is_estimated', pi.is_estimated,
-                   'name', i.name, 'unit', i.unit) order by i.name), '[]')
-                   from la_obra_v2.preparation_inputs pi join la_obra_v2.inputs i on i.id = pi.input_id where pi.preparation_id = p.id),
+                   'name', i.name, 'unit', i.unit, 'unit_id', pi.unit_id, 'unit_quantity', pi.unit_quantity::float8, 'unit_name', un.name) order by i.name), '[]')
+                   from la_obra_v2.preparation_inputs pi join la_obra_v2.inputs i on i.id = pi.input_id
+                   left join la_obra_v2.input_units un on un.id = pi.unit_id where pi.preparation_id = p.id),
       'batch_cost', c -> 'batch_cost', 'unit_cost', c -> 'unit_cost', 'missing_prices', coalesce(c -> 'missing', '[]'))
       order by p.name, p.id), '[]')
     from la_obra_v2.preparations p cross join lateral (select la_obra_v2.preparation_cost(p.id) c) x)));
@@ -1666,21 +1868,30 @@ begin
   o_yield := round(la_obra_v2.num(d -> 'yield_quantity'), 3);
   for i in select * from jsonb_array_elements(d -> 'inputs') loop
     v_iid := la_obra_v2.positive_id(i -> 'input_id');
-    if v_iid = any(seen) or not la_obra_v2.is_num(i -> 'quantity') or la_obra_v2.num(i -> 'quantity') <= 0 then
+    if v_iid = any(seen) or not la_obra_v2.is_num(coalesce(nullif(i -> 'unit_quantity', 'null'::jsonb), i -> 'quantity'))
+       or la_obra_v2.num(coalesce(nullif(i -> 'unit_quantity', 'null'::jsonb), i -> 'quantity')) <= 0 then
       perform la_obra_v2.fail(422, 'Insumos duplicados o cantidades inválidas');
     end if;
     seen := seen || v_iid;
     if not exists(select 1 from la_obra_v2.inputs where id = v_iid and status = 'active') then perform la_obra_v2.fail(422, 'Insumo inexistente o inactivo'); end if;
+    perform la_obra_v2.item_quantity(v_iid, i);  -- valida la medida (pieza, cucharada…) si viene
   end loop;
 end $$;
 
+-- Cada ingrediente se guarda en la unidad principal (quantity) y, si se capturó en otra medida,
+-- también la medida y la cantidad tal como se escribió (unit_id, unit_quantity).
 create or replace function la_obra_v2.prep_save_inputs(p_id int, d jsonb)
-returns void language sql as $$
+returns void language plpgsql as $$
+declare i jsonb; n bigint; v_iid int; v_qty numeric; v_uid int; v_uqty numeric;
+begin
   delete from la_obra_v2.preparation_inputs where preparation_id = p_id;
-  insert into la_obra_v2.preparation_inputs(preparation_id, input_id, quantity, is_estimated)
-  select p_id, la_obra_v2.num(i -> 'input_id')::int, round(la_obra_v2.num(i -> 'quantity'), 3), la_obra_v2.not_empty(i -> 'is_estimated')
-    from jsonb_array_elements(d -> 'inputs') with ordinality x(i, n) order by n;
-$$;
+  for i, n in select x.i, x.n from jsonb_array_elements(d -> 'inputs') with ordinality x(i, n) order by x.n loop
+    v_iid := la_obra_v2.num(i -> 'input_id')::int;
+    select o_qty, o_unit_id, o_unit_qty into v_qty, v_uid, v_uqty from la_obra_v2.item_quantity(v_iid, i);
+    insert into la_obra_v2.preparation_inputs(preparation_id, input_id, quantity, is_estimated, unit_id, unit_quantity)
+    values (p_id, v_iid, v_qty, la_obra_v2.not_empty(i -> 'is_estimated'), v_uid, v_uqty);
+  end loop;
+end $$;
 
 create or replace function la_obra_v2.ep_preparations__create(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
@@ -1918,7 +2129,7 @@ create or replace function la_obra_v2.ep_orders__checkout(m text, q jsonb, b jso
 returns jsonb language plpgsql as $$
 declare u la_obra_v2.users; v_mode text; v_customer text; it jsonb; v_pid int; v_q int; v_lines jsonb := '{}'; k text;
         pr record; v_payment jsonb; pm record; v_deliver boolean; v_order int; v_total numeric := 0; v_sub numeric;
-        v_cash numeric; v_change numeric; v_cash_j jsonb;
+        v_cash numeric; v_change numeric; v_cash_j jsonb; v_fee numeric;
 begin
   perform la_obra_v2.method(m, 'POST');
   u := la_obra_v2.auth(t);
@@ -1975,7 +2186,9 @@ begin
       v_cash := la_obra_v2.num(v_cash_j);
       v_change := round(v_cash - v_total, 2);
     end if;
-    insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount) values (v_order, pm.id, v_total, round(v_cash, 2), v_change);
+    v_fee := la_obra_v2.payment_commission(pm.id, v_total);
+    insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount, commission_amount)
+    values (v_order, pm.id, v_total, round(v_cash, 2), v_change, v_fee);
     update la_obra_v2.orders set payment_status = 'paid' where id = v_order;
   end if;
   if v_deliver then
@@ -1983,7 +2196,7 @@ begin
     perform la_obra_v2.inv_consume_order(v_order, u.id);
   end if;
   return la_obra_v2.ok(201, 'Venta registrada', jsonb_build_object('order', jsonb_build_object('id', v_order, 'total', v_total::float8,
-    'change_amount', v_change::float8, 'payment_status', case when v_payment is not null then 'paid' else 'pending' end,
+    'change_amount', v_change::float8, 'commission_amount', v_fee::float8, 'payment_status', case when v_payment is not null then 'paid' else 'pending' end,
     'delivery_status', case when v_deliver then 'delivered' else 'pending' end)));
 end $$;
 
@@ -2009,6 +2222,7 @@ begin
       'customer_name', o.customer_name, 'created_at', o.created_at, 'confirmed_at', o.confirmed_at, 'delivered_at', o.delivered_at,
       'cancelled_at', o.cancelled_at, 'total', o.total::float8, 'order_status', o.order_status, 'payment_status', o.payment_status,
       'delivery_status', o.delivery_status, 'payment_method_id', pm.id, 'payment_method', pm.name, 'paid_at', p.paid_at,
+      'commission_amount', p.commission_amount::float8,
       'items', la_obra_v2.order_items_json(o.id)) order by o.created_at desc, o.id desc), '[]')
     from la_obra_v2.orders o join la_obra_v2.users us on us.id = o.user_id
     left join la_obra_v2.payments p on p.order_id = o.id left join la_obra_v2.payment_methods pm on pm.id = p.payment_method_id
@@ -2026,7 +2240,7 @@ begin
   u := la_obra_v2.auth_long(t);
   if not la_obra_v2.int_arg(q -> 'id') then perform la_obra_v2.fail(422, 'El id no es válido'); end if;
   v_id := la_obra_v2.num(q -> 'id');
-  select o2.*, us.name as user_name, p.id as payment_id, p.amount, p.cash_received, p.change_amount, p.paid_at, pm.id as pm_id, pm.name as pm_name
+  select o2.*, us.name as user_name, p.id as payment_id, p.amount, p.cash_received, p.change_amount, p.paid_at, p.commission_amount, pm.id as pm_id, pm.name as pm_name
     into o from la_obra_v2.orders o2 join la_obra_v2.users us on us.id = o2.user_id
     left join la_obra_v2.payments p on p.order_id = o2.id left join la_obra_v2.payment_methods pm on pm.id = p.payment_method_id where o2.id = v_id;
   if o.id is null then perform la_obra_v2.fail(404, 'Venta o pedido no encontrado'); end if;
@@ -2036,12 +2250,13 @@ begin
     'created_at', o.created_at, 'confirmed_at', o.confirmed_at, 'delivered_at', o.delivered_at, 'cancelled_at', o.cancelled_at,
     'items', la_obra_v2.order_items_json(o.id),
     'payment', case when o.payment_id is null then null else jsonb_build_object('id', o.payment_id, 'payment_method_id', o.pm_id, 'payment_method', o.pm_name,
-      'amount', o.amount::float8, 'cash_received', o.cash_received::float8, 'change_amount', o.change_amount::float8, 'paid_at', o.paid_at) end)));
+      'amount', o.amount::float8, 'cash_received', o.cash_received::float8, 'change_amount', o.change_amount::float8, 'paid_at', o.paid_at,
+      'commission_amount', o.commission_amount::float8) end)));
 end $$;
 
 create or replace function la_obra_v2.ep_sales__payment(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare v_o int; v_m int; o record; pm record; v_cash numeric; v_change numeric;
+declare v_o int; v_m int; o record; pm record; v_cash numeric; v_change numeric; v_fee numeric;
 begin
   perform la_obra_v2.method(m, 'POST');
   perform la_obra_v2.auth_long(t);
@@ -2060,10 +2275,12 @@ begin
     end if;
     v_cash := la_obra_v2.num(b -> 'cash_received'); v_change := v_cash - o.total;
   end if;
-  insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount) values (v_o, v_m, o.total, round(v_cash, 2), round(v_change, 2));
+  v_fee := la_obra_v2.payment_commission(v_m, o.total);
+  insert into la_obra_v2.payments(order_id, payment_method_id, amount, cash_received, change_amount, commission_amount)
+  values (v_o, v_m, o.total, round(v_cash, 2), round(v_change, 2), v_fee);
   update la_obra_v2.orders set payment_status = 'paid' where id = v_o;
   return la_obra_v2.ok(200, 'Pago registrado correctamente', jsonb_build_object('payment', jsonb_build_object('order_id', v_o, 'payment_method', pm.name,
-    'amount', o.total::float8, 'cash_received', v_cash::float8, 'change_amount', v_change::float8)));
+    'amount', o.total::float8, 'cash_received', v_cash::float8, 'change_amount', v_change::float8, 'commission_amount', v_fee::float8)));
 end $$;
 
 create or replace function la_obra_v2.ep_sales__cancel(m text, q jsonb, b jsonb, t text)
@@ -2519,6 +2736,49 @@ begin
   return la_obra_v2.ok(200, 'Inventario ajustado', jsonb_build_object('stock', la_obra_v2.inv_stock(v_id)::float8, 'difference', v_diff::float8));
 end $$;
 
+-- inventory/count.php · POST {items: [{input_id, counted_quantity, unit_id?}], note?}
+-- Captura de existencias: registra lo que hay HOY de varios insumos a la vez, aunque no tengan
+-- compras ni costo registrado. Por cada insumo con diferencia se guarda un "Ajuste por conteo";
+-- no toca compras, recetas ni costos. Los insumos que se dejan vacíos no se modifican.
+create or replace function la_obra_v2.ep_inventory__count(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; it jsonb; v_id int; v_counted numeric; v_note text; v_before numeric; v_diff numeric; v_seen int[] := '{}';
+        v_changed int := 0; v_same int := 0; un la_obra_v2.input_units;
+begin
+  perform la_obra_v2.method(m, 'POST');
+  u := la_obra_v2.auth(t, true);
+  b := la_obra_v2.body(b);
+  if jsonb_typeof(b -> 'items') is distinct from 'array' or jsonb_array_length(b -> 'items') = 0 then
+    perform la_obra_v2.fail(422, 'Escribe la existencia de al menos un insumo');
+  end if;
+  v_note := la_obra_v2.jstr(b -> 'note');
+  if char_length(v_note) > 255 then perform la_obra_v2.fail(422, 'La nota es demasiado larga'); end if;
+  for it in select * from jsonb_array_elements(b -> 'items') loop
+    v_id := la_obra_v2.positive_id(it -> 'input_id', 'Insumo inválido');
+    if v_id = any(v_seen) then perform la_obra_v2.fail(422, 'Hay un insumo repetido en la captura'); end if;
+    v_seen := v_seen || v_id;
+    if not exists(select 1 from la_obra_v2.inputs where id = v_id) then perform la_obra_v2.fail(404, 'Insumo no encontrado: ' || v_id); end if;
+    if not la_obra_v2.is_num(it -> 'counted_quantity') or la_obra_v2.num(it -> 'counted_quantity') < 0 then
+      perform la_obra_v2.fail(422, 'Las existencias no pueden ser negativas');
+    end if;
+    v_counted := la_obra_v2.num(it -> 'counted_quantity');
+    if la_obra_v2.not_empty(it -> 'unit_id') then
+      select * into un from la_obra_v2.input_units where id = la_obra_v2.positive_id(it -> 'unit_id', 'Medida inválida');
+      if un.id is null or un.input_id <> v_id then perform la_obra_v2.fail(422, 'La medida elegida no corresponde al insumo'); end if;
+      v_counted := v_counted * un.base_amount / un.unit_amount;
+    end if;
+    v_before := la_obra_v2.inv_stock(v_id);
+    v_diff := round(v_counted - v_before, 3);
+    if abs(v_diff) < 0.0005 then v_same := v_same + 1; continue; end if;
+    perform la_obra_v2.inv_record(v_id, 'adjustment', v_diff, la_obra_v2.input_cost(v_id), 'adjustment', null,
+      coalesce(nullif(v_note, ''), 'Captura de existencias'), u.id);
+    v_changed := v_changed + 1;
+  end loop;
+  return la_obra_v2.ok(200, case when v_changed = 0 then 'Sin cambios: las existencias ya coincidían'
+                                 else 'Existencias guardadas: ' || v_changed || ' insumo(s) actualizado(s)' end,
+    jsonb_build_object('updated', v_changed, 'unchanged', v_same));
+end $$;
+
 create or replace function la_obra_v2.cost_mode(q jsonb)
 returns text language plpgsql as $$
 declare v text := coalesce(la_obra_v2.jtext(q -> 'delivery_mode'), 'local');
@@ -2661,8 +2921,9 @@ begin
   perform la_obra_v2.report_auth(t);
   select * into r from la_obra_v2.report_range(q);
   return la_obra_v2.ok(200, 'Reporte', jsonb_build_object('from', r.o_from, 'to', r.o_to, 'data', (
-    select coalesce(jsonb_agg(jsonb_build_object('method_id', id::float8, 'name', name, 'amount', amount::float8, 'orders', orders::float8) order by amount desc, id), '[]') from (
-      select pm.id, pm.name, sum(pay.amount) amount, count(*) orders
+    select coalesce(jsonb_agg(jsonb_build_object('method_id', id::float8, 'name', name, 'amount', amount::float8, 'orders', orders::float8,
+             'commission', commission::float8) order by amount desc, id), '[]') from (
+      select pm.id, pm.name, sum(pay.amount) amount, count(*) orders, coalesce(sum(pay.commission_amount), 0) commission
         from la_obra_v2.payments pay join la_obra_v2.orders o on o.id = pay.order_id join la_obra_v2.payment_methods pm on pm.id = pay.payment_method_id
        where o.order_status = 'confirmed' and o.payment_status = 'paid' and pay.paid_at >= r.o_from and pay.paid_at < r.o_to + 1
        group by pm.id, pm.name) s)));
@@ -2704,7 +2965,7 @@ end $$;
 create or replace function la_obra_v2.ep_reports__summary(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
 declare v_from date; v_to date; tt record; cs record; v_purch numeric; v_exp numeric; v_waste numeric; canc record; v_sales numeric; v_cos numeric;
-        v_methods jsonb; v_cash_sales numeric := 0; v_cash_purch numeric;
+        v_methods jsonb; v_cash_sales numeric := 0; v_cash_purch numeric; v_fees numeric;
 begin
   perform la_obra_v2.method(m, 'GET');
   perform la_obra_v2.auth(t, true);
@@ -2727,8 +2988,9 @@ begin
   select count(*) n, coalesce(sum(total), 0) tot into canc from la_obra_v2.orders o where o.order_status = 'cancelled' and o.created_at::date between v_from and v_to;
   v_sales := tt.sales; v_cos := cs.cost;
 
-  select coalesce(jsonb_agg(jsonb_build_object('name', name, 'orders', orders::float8, 'amount', amount::float8) order by amount desc, id), '[]') into v_methods from (
-    select pm.id, pm.name, count(*) orders, sum(pay.amount) amount
+  select coalesce(sum(pay.commission_amount), 0) into v_fees from la_obra_v2.payments pay join lo_paid p on p.id = pay.order_id;
+  select coalesce(jsonb_agg(jsonb_build_object('name', name, 'orders', orders::float8, 'amount', amount::float8, 'commission', commission::float8) order by amount desc, id), '[]') into v_methods from (
+    select pm.id, pm.name, count(*) orders, sum(pay.amount) amount, coalesce(sum(pay.commission_amount), 0) commission
       from la_obra_v2.payments pay join lo_paid p on p.id = pay.order_id join la_obra_v2.payment_methods pm on pm.id = pay.payment_method_id
      group by pm.id, pm.name) s;
   select coalesce((select (x ->> 'amount')::numeric from jsonb_array_elements(v_methods) x where lower(btrim(x ->> 'name')) = 'efectivo' limit 1), 0) into v_cash_sales;
@@ -2742,7 +3004,10 @@ begin
       'cost_of_sales', round(v_cos, 2)::float8, 'gross_profit', round(v_sales - v_cos, 2)::float8,
       'gross_margin', case when v_sales > 0 then round((v_sales - v_cos) / v_sales * 100, 1)::float8 else null end,
       'lines_without_cost', cs.no_cost, 'purchases', round(v_purch, 2)::float8, 'expenses', round(v_exp, 2)::float8,
-      'waste', round(v_waste, 2)::float8, 'cancelled_orders', canc.n, 'cancelled_amount', round(canc.tot, 2)::float8),
+      'waste', round(v_waste, 2)::float8, 'cancelled_orders', canc.n, 'cancelled_amount', round(canc.tot, 2)::float8,
+      -- Comisiones de la terminal (tarjeta): lo que se queda el banco de las ventas cobradas
+      'card_fees', round(v_fees, 2)::float8, 'net_sales', round(v_sales - v_fees, 2)::float8,
+      'profit_after_fees', round(v_sales - v_cos - v_fees, 2)::float8),
     'daily', (select coalesce(jsonb_agg(jsonb_build_object('day', day, 'orders', orders::float8, 'sales', sales::float8) order by day), '[]') from (
         select o.created_at::date as day, count(*) orders, sum(o.total) sales from la_obra_v2.orders o join lo_paid p on p.id = o.id group by o.created_at::date) s),
     'products', (select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'quantity', quantity::float8, 'revenue', revenue::float8, 'cost', cost::float8) order by revenue desc, id), '[]') from (
@@ -3190,7 +3455,7 @@ set check_function_bodies = off;
 -- Tablas en orden de dependencias (para insertar; se borran al revés)
 create or replace function la_obra_v2.backup_tables()
 returns text[] language sql immutable as $$
-  select array['users','sessions','categories','payment_methods','inputs','products','preparations','preparation_inputs',
+  select array['users','sessions','categories','payment_methods','inputs','input_units','products','preparations','preparation_inputs',
                'recipes','product_components','orders','order_items','payments','purchases','purchase_items','purchase_history',
                'expenses','expense_history','waste_records','inventory_movements','order_test_invoices','work_location','attendance'];
 $$;
@@ -3241,6 +3506,8 @@ begin
       execute format('select setval(%L, greatest(coalesce((select max(id) from la_obra_v2.%I), 0), 1), (select count(*) > 0 from la_obra_v2.%I))', seq, tb, tb);
     end if;
   end loop;
+  -- Respaldos anteriores a la comisión de terminal: Tarjeta vuelve a quedar con 4 %
+  update la_obra_v2.payment_methods set commission_percent = 4.00 where commission_percent is null and lower(name) like '%tarjeta%';
   if jsonb_typeof(bk -> 'files') = 'array' and jsonb_array_length(bk -> 'files') > 0 then
     delete from la_obra_v2.files;
     insert into la_obra_v2.files(path, mime, data, created_at)

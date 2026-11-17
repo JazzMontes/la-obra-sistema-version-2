@@ -9,6 +9,7 @@ import { todayIso } from '../../shared/format.pipes';
 import { dataUrlToBlob } from '../../utils/image';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
+import { SearchOption } from '../../shared/search-select.component';
 
 interface Line {
   input_id: number | null;
@@ -55,6 +56,7 @@ export class PurchasesPage {
   // Alta rápida de insumo desde un renglón
   inputModalOpen = false;
   inputForLine: Line | null = null;
+  newInputName = '';
   savingInput = false;
 
   // Detalle
@@ -165,11 +167,22 @@ export class PurchasesPage {
     if (!this.lines.length) this.addLine();
   }
 
+  // Opciones del buscador de insumos
+  get inputOptions(): SearchOption[] {
+    return this.memo.get('inputOptions', [this.inputs], () => this.inputs.map(i => ({ id: Number(i.id), name: i.name, sub: i.unit })));
+  }
+
+  // "+ Registrar insumo nuevo" desde el buscador (con lo que se escribió como nombre)
+  openNewInput(line: Line, name: string) {
+    this.inputForLine = line;
+    this.newInputName = name || '';
+    this.inputModalOpen = true;
+  }
+
   onInputChange(line: Line, value: any) {
     if (Number(value) === NEW_INPUT) {
       line.input_id = null;
-      this.inputForLine = line;
-      this.inputModalOpen = true;
+      this.openNewInput(line, '');
       return;
     }
     line.input_id = value === null ? null : Number(value);

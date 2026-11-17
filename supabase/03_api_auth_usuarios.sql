@@ -24,7 +24,7 @@ begin
   delete from la_obra_v2.sessions where expires_at < localtimestamp - interval '1 day';
   return la_obra_v2.ok(200, 'Inicio de sesión correcto', jsonb_build_object('token', v_token,
     'user', jsonb_build_object('id', u.id, 'name', u.name, 'username', u.username, 'email', u.email,
-                               'role', u.role, 'must_change_password', u.must_change_password)));
+                               'role', u.role, 'must_change_password', u.must_change_password, 'avatar_path', u.avatar_path)));
 end $$;
 
 -- auth/logout.php
@@ -49,7 +49,8 @@ begin
   u := la_obra_v2.auth_long(t);
   if m = 'GET' then
     return la_obra_v2.ok(200, 'Sesión activa', jsonb_build_object('user', jsonb_build_object('id', u.id, 'name', u.name,
-      'username', u.username, 'email', u.email, 'role', u.role, 'status', u.status, 'must_change_password', u.must_change_password)));
+      'username', u.username, 'email', u.email, 'role', u.role, 'status', u.status, 'must_change_password', u.must_change_password,
+      'avatar_path', u.avatar_path)));
   end if;
   v_name := la_obra_v2.jstr(b -> 'name');
   v_username := la_obra_v2.jstr(b -> 'username');
@@ -61,7 +62,24 @@ begin
   end if;
   update la_obra_v2.users set name = v_name, username = v_username, email = v_email, updated_at = localtimestamp where id = u.id;
   return la_obra_v2.ok(200, 'Perfil actualizado correctamente', jsonb_build_object('user', jsonb_build_object('id', u.id,
-    'name', v_name, 'username', v_username, 'email', v_email, 'role', u.role, 'status', u.status)));
+    'name', v_name, 'username', v_username, 'email', v_email, 'role', u.role, 'status', u.status, 'avatar_path', u.avatar_path)));
+end $$;
+
+-- auth/avatar.php · foto de perfil del usuario que inició sesión
+--   POST {image: data URL} → la guarda (reemplaza la anterior) · DELETE → la quita
+create or replace function la_obra_v2.ep_auth__avatar(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; v_path text;
+begin
+  if m not in ('POST', 'DELETE') then perform la_obra_v2.fail(405, 'Método no permitido'); end if;
+  u := la_obra_v2.auth_long(t);
+  if m = 'POST' then
+    v_path := la_obra_v2.save_image(la_obra_v2.body(b) -> 'image', 'avatars', 'u' || u.id);
+  end if;
+  update la_obra_v2.users set avatar_path = v_path, updated_at = localtimestamp where id = u.id;
+  perform la_obra_v2.delete_file(u.avatar_path, 'avatars');
+  return la_obra_v2.ok(200, case when m = 'POST' then 'Foto de perfil actualizada' else 'Foto de perfil eliminada' end,
+    jsonb_build_object('avatar_path', v_path));
 end $$;
 
 -- auth/password.php
@@ -108,7 +126,8 @@ begin
   perform la_obra_v2.auth_long(t, true, 'No tienes permisos para consultar usuarios');
   if v_status <> '' and v_status not in ('pending','active','rejected','inactive') then perform la_obra_v2.fail(422, 'El estado no es válido'); end if;
   return la_obra_v2.ok(200, 'Usuarios consultados', jsonb_build_object('users', (
-    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'username', username, 'email', email, 'status', status, 'role', role) order by id), '[]')
+    select coalesce(jsonb_agg(jsonb_build_object('id', id, 'name', name, 'username', username, 'email', email, 'status', status, 'role', role,
+             'avatar_path', avatar_path) order by id), '[]')
       from la_obra_v2.users where v_status = '' or status = v_status)));
 end $$;
 

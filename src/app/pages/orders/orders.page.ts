@@ -155,6 +155,15 @@ export class OrdersPage {
     return String(this.methods.find(m => m.id === this.methodId)?.name ?? '').trim().toLowerCase() === 'efectivo';
   }
 
+  // Comisión de la terminal del método elegido (ej. 4 % con tarjeta)
+  get feePercent(): number {
+    return Number(this.methods.find(m => m.id === this.methodId)?.commission_percent) || 0;
+  }
+
+  get fee(): number | null {
+    return this.paying && this.feePercent > 0 ? Math.round(Number(this.paying.total) * this.feePercent) / 100 : null;
+  }
+
   get changeDue(): number | null {
     if (!this.paying || !this.isCash || this.cash === null) return null;
     return Math.round((Number(this.cash) - Number(this.paying.total)) * 100) / 100;

@@ -3,3 +3,22 @@
   gap: 10px;
   margin-bottom: 12px;
 }
+
+// Comisión de la terminal
+.fee {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.fee-input {
+  width: 76px;
+  text-align: right;
+}
+
+@media (max-width: 560px) {
+  .list-row {
+    flex-wrap: wrap;
+  }
+}

@@ -141,6 +141,9 @@
           <div class="change" *ngIf="result.change_amount !== null && result.change_amount !== undefined">
             Cambio: <strong class="num">{{ result.change_amount | money }}</strong>
           </div>
+          <div class="small muted" *ngIf="result.commission_amount">
+            Comisión de la terminal: {{ result.commission_amount | money }} · te queda {{ result.total - result.commission_amount | money }}
+          </div>
         </div>
         <div class="modal-foot">
           <button class="btn" type="button" (click)="goOrders()">Ver pedidos</button>
@@ -178,6 +181,16 @@
               <div class="change-box" *ngIf="changeDue !== null" [class.short]="changeDue < 0">
                 <span>{{ changeDue < 0 ? 'Faltan' : 'Cambio' }}</span>
                 <strong class="num">{{ (changeDue < 0 ? -changeDue : changeDue) | money }}</strong>
+              </div>
+            </div>
+            <div class="fee-box" *ngIf="fee !== null">
+              <div class="row-between">
+                <span>Comisión de la terminal ({{ feePercent | qty: 2 }} %)</span>
+                <strong class="num">−{{ fee | money }}</strong>
+              </div>
+              <div class="row-between small muted">
+                <span>Te queda de esta venta</span>
+                <span class="num">{{ total - fee | money }}</span>
               </div>
             </div>
           </ng-container>

@@ -169,24 +169,27 @@
 
         <div class="card" *ngIf="recipeLoaded; else loadingRecipe">
           <div class="comp" *ngFor="let c of recipe; let i = index">
-            <select class="select" [(ngModel)]="c.ref" [attr.aria-label]="'Componente ' + (i + 1)">
-              <option [ngValue]="null" disabled>Selecciona…</option>
-              <optgroup label="Preparaciones" *ngIf="preparations.length">
-                <option *ngFor="let p of preparations" [ngValue]="'p:' + p.id">{{ p.name }}</option>
-              </optgroup>
-              <optgroup label="Insumos">
-                <option *ngFor="let inp of inputs" [ngValue]="'i:' + inp.id">{{ inp.name }}</option>
-              </optgroup>
-            </select>
+            <div class="comp-pick">
+              <app-search-select
+                [items]="componentOptions"
+                [value]="c.ref"
+                (valueChange)="setRef(c, $event)"
+                placeholder="Buscar insumo o preparación"
+                [ariaLabel]="'Componente ' + (i + 1)"
+              ></app-search-select>
+              <!-- Recetas anteriores marcadas solo para llevar / comer aquí: se conservan tal cual -->
+              <span class="small muted mode-note" *ngIf="c.delivery_mode !== 'always'">
+                Guardado antes como "{{ c.delivery_mode === 'takeaway' ? 'solo para llevar' : 'solo comer aquí' }}"
+                · <button type="button" class="link small" (click)="c.delivery_mode = 'always'">usar siempre</button>
+              </span>
+            </div>
             <div class="input-group">
               <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="c.quantity" aria-label="Cantidad" />
-              <span class="addon">{{ componentUnit(c) }}</span>
+              <select class="select addon-select unit-select" *ngIf="componentUnits(c).length > 1; else baseUnit" [(ngModel)]="c.unit_id" aria-label="Medida">
+                <option *ngFor="let u of componentUnits(c)" [ngValue]="u.id">{{ u.name }}</option>
+              </select>
+              <ng-template #baseUnit><span class="addon">{{ componentUnit(c) }}</span></ng-template>
             </div>
-            <select class="select" [(ngModel)]="c.delivery_mode" aria-label="Cuándo se usa">
-              <option value="always">Siempre</option>
-              <option value="local">Solo comer aquí</option>
-              <option value="takeaway">Solo para llevar</option>
-            </select>
             <span class="num cost">{{ componentCost(c) | money }}</span>
             <button class="btn btn-ghost btn-icon" type="button" (click)="removeComponent(i)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
           </div>

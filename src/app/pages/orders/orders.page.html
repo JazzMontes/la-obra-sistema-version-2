@@ -117,6 +117,10 @@
             {{ changeDue < 0 ? 'Faltan' : 'Cambio' }}: {{ (changeDue < 0 ? -changeDue : changeDue) | money }}
           </span>
         </div>
+        <div class="notice warning" *ngIf="fee !== null">
+          <app-icon name="card"></app-icon>
+          <div>Comisión de la terminal ({{ feePercent | qty: 2 }} %): <strong class="num">−{{ fee | money }}</strong> · te queda {{ p.total - fee | money }}</div>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn" type="button" (click)="paying = null">Cancelar</button>
@@ -149,6 +153,10 @@
         <div class="row-between total-line">
           <span>Total{{ d.payment_method ? ' · ' + d.payment_method : '' }}</span>
           <strong class="num">{{ d.total | money }}</strong>
+        </div>
+        <div class="row-between small muted" *ngIf="d.commission_amount">
+          <span>Comisión de la terminal</span>
+          <span class="num">−{{ d.commission_amount | money }}</span>
         </div>
 
         <!-- Factura de prueba -->

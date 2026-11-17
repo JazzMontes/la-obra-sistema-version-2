@@ -35,6 +35,10 @@ export class InputsPage {
     this.load();
   }
 
+  otherUnits(i: any): string {
+    return (i.units ?? []).map((u: any) => u.name).join(', ');
+  }
+
   async load() {
     try {
       this.items = (await this.api.get('inventory/index.php')).inventory;
