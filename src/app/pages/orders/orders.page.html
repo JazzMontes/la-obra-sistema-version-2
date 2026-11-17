@@ -27,7 +27,9 @@
         <article class="card order" *ngFor="let o of active" [class.late]="minutes(o) >= 20 && o.delivery_status === 'pending'">
           <div class="order-head">
             <div>
-              <div class="order-id">#{{ o.id }}<span *ngIf="o.customer_name"> · {{ o.customer_name }}</span></div>
+              <div class="order-id">#{{ o.id }}<span *ngIf="o.customer_name"> · {{ o.customer_name }}</span>
+                <span class="badge badge-brand edited-tag" *ngIf="o.edit_count" [title]="'Editado ' + (o.edited_at | dateMx: 'time')">Editado</span>
+              </div>
               <div class="small muted">
                 <app-icon [name]="o.delivery_mode === 'takeaway' ? 'takeaway' : 'dine'"></app-icon>
                 {{ o.delivery_mode === 'takeaway' ? 'Para llevar' : 'Comer aquí' }} · {{ elapsed(o) }}
@@ -41,6 +43,9 @@
           <div class="order-foot">
             <strong class="num">{{ o.total | money }}</strong>
             <div class="row">
+              <button class="btn btn-sm btn-ghost btn-icon" type="button" *ngIf="canEdit(o)" (click)="openEdit(o)" [disabled]="busy.has(o.id)" aria-label="Editar pedido" title="Editar pedido">
+                <app-icon name="edit"></app-icon>
+              </button>
               <button class="btn btn-sm btn-ghost" type="button" *ngIf="o.payment_status === 'pending'" (click)="cancel(o)" [disabled]="busy.has(o.id)">Cancelar</button>
               <button class="btn btn-sm" type="button" *ngIf="o.payment_status === 'pending'" (click)="openPay(o)" [disabled]="busy.has(o.id)">
                 <app-icon name="cash"></app-icon>Cobrar
@@ -78,7 +83,9 @@
         <div class="list" *ngIf="history.length">
           <div class="list-row clickable" *ngFor="let s of history" (click)="openDetail(s)">
             <div class="grow">
-              <div class="title">#{{ s.id }}<span *ngIf="s.customer_name"> · {{ s.customer_name }}</span></div>
+              <div class="title">#{{ s.id }}<span *ngIf="s.customer_name"> · {{ s.customer_name }}</span>
+                <span class="badge badge-brand edited-tag" *ngIf="s.edit_count">Editado</span>
+              </div>
               <div class="sub">{{ s.created_at | dateMx: 'time' }} · {{ s.user_name }}<span *ngIf="s.payment_method"> · {{ s.payment_method }}</span></div>
             </div>
             <span [class]="'badge ' + status(s).cls">{{ status(s).label }}</span>
@@ -159,6 +166,20 @@
           <span class="num">−{{ d.commission_amount | money }}</span>
         </div>
 
+        <!-- Ediciones -->
+        <div class="edits" *ngIf="d.edit_count">
+          <div class="edits-head">
+            <app-icon name="history"></app-icon>
+            <strong>Editado {{ d.edit_count === 1 ? '1 vez' : d.edit_count + ' veces' }}</strong>
+          </div>
+          <p class="small muted" *ngIf="detailEditsLoading">Consultando…</p>
+          <div class="edit-entry" *ngFor="let e of detailEdits">
+            <div class="small muted">{{ e.edited_at | dateMx: 'datetime' }} · {{ e.user_name }}</div>
+            <div class="small">{{ e.summary }}</div>
+            <div class="small muted" *ngIf="e.reason">Motivo: {{ e.reason }}</div>
+          </div>
+        </div>
+
         <!-- Factura de prueba -->
         <div class="invoice" *ngIf="canInvoice(d)">
           <div class="invoice-head">
@@ -191,8 +212,112 @@
           <div class="form-error small" *ngIf="invoiceError">{{ invoiceError }}</div>
         </div>
       </div>
-      <div class="modal-foot" *ngIf="isAdmin && d.order_status === 'confirmed' && d.payment_status === 'paid'">
-        <button class="btn btn-danger-ghost" type="button" (click)="cancelSale(d)">Cancelar venta</button>
+      <div class="modal-foot" *ngIf="canEdit(d) || (isAdmin && d.order_status === 'confirmed' && d.payment_status === 'paid')">
+        <button class="btn btn-danger-ghost" type="button" *ngIf="isAdmin && d.order_status === 'confirmed' && d.payment_status === 'paid'" (click)="cancelSale(d)">Cancelar venta</button>
+        <button class="btn btn-primary" type="button" *ngIf="canEdit(d)" (click)="openEdit(d)"><app-icon name="edit"></app-icon>Editar pedido</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+
+<!-- Editar pedido (aún sin entregar) -->
+<ion-modal class="sheet" [isOpen]="!!editing" (didDismiss)="editing = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="editing as e">
+      <div class="modal-head">
+        <h2>Editar pedido #{{ e.id }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="editing = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="segmented block">
+          <button type="button" [class.active]="editMode === 'local'" (click)="editMode = 'local'"><app-icon name="dine"></app-icon>Comer aquí</button>
+          <button type="button" [class.active]="editMode === 'takeaway'" (click)="editMode = 'takeaway'"><app-icon name="takeaway"></app-icon>Para llevar</button>
+        </div>
+        <input class="input" [(ngModel)]="editCustomer" placeholder="Nombre del cliente (opcional)" maxlength="80" />
+
+        <div class="edit-lines">
+          <div class="eline" *ngFor="let l of editLines">
+            <div class="grow">
+              <div class="ename">{{ l.name }} <span class="badge badge-info" *ngIf="l.isNew">Nuevo</span></div>
+              <div class="small muted num">{{ l.price | money }} c/u</div>
+            </div>
+            <div class="stepper">
+              <button type="button" (click)="changeEditQty(l, -1)" [attr.aria-label]="l.quantity === 1 ? 'Quitar' : 'Menos'">
+                <app-icon [name]="l.quantity === 1 ? 'trash' : 'minus'"></app-icon>
+              </button>
+              <span class="num">{{ l.quantity }}</span>
+              <button type="button" (click)="changeEditQty(l, 1)" aria-label="Más"><app-icon name="plus"></app-icon></button>
+            </div>
+            <div class="esub num">{{ l.quantity * l.price | money }}</div>
+          </div>
+          <div class="empty small" *ngIf="!editLines.length">
+            <p>Sin productos. Agrega al menos uno o cancela el pedido.</p>
+          </div>
+        </div>
+        <div class="field">
+          <label for="e-add">Agregar producto</label>
+          <app-search-select inputId="e-add" [items]="addOptions" [value]="null" (valueChange)="addEditProduct($event)" placeholder="Buscar producto"></app-search-select>
+          <span class="small muted">Los productos que ya estaban conservan su precio; los nuevos entran con el precio actual.</span>
+        </div>
+
+        <div class="row-between total-line">
+          <span>Nuevo total</span>
+          <strong class="num">{{ editTotal | money }}</strong>
+        </div>
+        <div class="row-between small muted" *ngIf="editTotal !== editOldTotal">
+          <span>Antes</span>
+          <span class="num strike">{{ e.total | money }}</span>
+        </div>
+
+        <!-- Cobro -->
+        <div class="field">
+          <label>Cobro</label>
+          <div class="segmented block">
+            <button type="button" [class.active]="editPaid" (click)="editPaid = true">Ya pagó</button>
+            <button type="button" [class.active]="!editPaid" (click)="editPaid = false">Por cobrar</button>
+          </div>
+        </div>
+        <ng-container *ngIf="editPaid">
+          <div class="methods">
+            <button type="button" *ngFor="let m of editMethods" [class.active]="editMethodId === m.id" (click)="editMethodId = m.id">{{ m.name }}</button>
+          </div>
+          <div class="field" *ngIf="editIsCash">
+            <label for="e-cash">Efectivo recibido</label>
+            <div class="input-group">
+              <span class="addon">$</span>
+              <input id="e-cash" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="editCash" [placeholder]="editTotal.toFixed(2)" />
+            </div>
+            <span class="small" *ngIf="editChange !== null" [class.text-danger]="editChange < 0" [class.text-success]="editChange >= 0">
+              {{ editChange < 0 ? 'Faltan' : 'Cambio' }}: {{ (editChange < 0 ? -editChange : editChange) | money }}
+            </span>
+            <span class="small muted" *ngIf="editChange === null">Si lo dejas vacío se registra el total exacto.</span>
+          </div>
+          <div class="notice" *ngIf="editPrevPaid !== null && editPrevPaid !== editTotal">
+            <app-icon name="info"></app-icon>
+            <div>
+              Ya se habían cobrado <strong class="num">{{ editPrevPaid | money }}</strong>.
+              <ng-container *ngIf="editPrevPaid > editTotal">Hay que devolver <strong class="num">{{ editPrevPaid - editTotal | money }}</strong>.</ng-container>
+              <ng-container *ngIf="editPrevPaid < editTotal">Falta cobrar <strong class="num">{{ editTotal - editPrevPaid | money }}</strong>.</ng-container>
+              El cobro se guarda con el nuevo total.
+            </div>
+          </div>
+        </ng-container>
+        <div class="notice warning" *ngIf="!editPaid && e.payment_status === 'paid'">
+          <app-icon name="alert"></app-icon>
+          <div>Se quitará el cobro de <strong class="num">{{ e.total | money }}</strong> y el pedido quedará por cobrar.</div>
+        </div>
+
+        <div class="field">
+          <label for="e-reason">Motivo (opcional)</label>
+          <input id="e-reason" class="input" [(ngModel)]="editReason" maxlength="255" placeholder="Ej. el cliente cambió de hamburguesa" />
+        </div>
+        <p class="small muted">El cambio queda registrado en el pedido: quién lo editó, cuándo y qué cambió.</p>
+        <div class="form-error small" *ngIf="editError">{{ editError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" (click)="editing = null">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="saveEdit()" [disabled]="savingEdit">{{ savingEdit ? 'Guardando…' : 'Guardar cambios' }}</button>
       </div>
     </div>
   </ng-template>

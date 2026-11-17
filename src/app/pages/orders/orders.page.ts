@@ -6,6 +6,10 @@ import { UiService } from '../../services/ui';
 import { Auth } from '../../services/auth';
 import { parseServerDate, todayIso } from '../../shared/format.pipes';
 import { RenderService, autoRefresh } from '../../services/render';
+import { SearchOption } from '../../shared/search-select.component';
+
+// Línea del pedido mientras se edita
+interface EditLine { product_id: number; name: string; price: number; quantity: number; isNew: boolean; }
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -35,6 +39,22 @@ export class OrdersPage {
   savingPay = false;
 
   detail: any = null;
+  detailEdits: any[] = [];
+  detailEditsLoading = false;
+
+  // Edición de un pedido que aún no se entrega (productos, modalidad, cliente y cobro)
+  editing: any = null;
+  editLines: EditLine[] = [];
+  editMode: 'local' | 'takeaway' = 'local';
+  editCustomer = '';
+  editPaid = false;
+  editMethodId: number | null = null;
+  editCash: number | null = null;
+  editReason = '';
+  editError = '';
+  savingEdit = false;
+  products: any[] = [];
+  addOptions: SearchOption[] = [];
 
   // Factura de prueba (CFDI 4.0 timbrado en el ambiente de pruebas de Profact)
   invoice: { uuid: string; xml: string } | null = null;
@@ -191,6 +211,135 @@ export class OrdersPage {
     }
   }
 
+  // ---------- Editar pedido (solo si no se ha entregado) ----------
+
+  canEdit(o: any): boolean {
+    return o?.order_status === 'confirmed' && o?.delivery_status === 'pending';
+  }
+
+  async openEdit(o: any) {
+    if (!this.canEdit(o)) return;
+    this.detail = null;
+    this.editing = o;
+    this.editLines = (o.items ?? []).map((i: any) => ({
+      product_id: i.product_id, name: i.name, price: Number(i.unit_price), quantity: Number(i.quantity), isNew: false,
+    }));
+    this.editMode = o.delivery_mode === 'takeaway' ? 'takeaway' : 'local';
+    this.editCustomer = o.customer_name ?? '';
+    this.editPaid = o.payment_status === 'paid';
+    this.editMethodId = o.payment_method_id
+      ?? this.methods.find(m => m.name.trim().toLowerCase() === 'efectivo')?.id ?? this.methods[0]?.id ?? null;
+    this.editCash = o.cash_received ?? null;
+    this.editReason = '';
+    this.editError = '';
+    this.refreshAddOptions();
+    try {
+      if (!this.products.length) {
+        this.products = (await this.api.get('products/index.php')).products.filter((p: any) => p.status === 'active');
+        this.refreshAddOptions();
+      }
+    } catch (e) {
+      this.editError = errorMessage(e, 'No se pudo cargar el menú');
+    }
+  }
+
+  // Productos que se pueden agregar (los que aún no están en el pedido)
+  private refreshAddOptions() {
+    const inOrder = new Set(this.editLines.map(l => l.product_id));
+    this.addOptions = this.products
+      .filter(p => !inOrder.has(p.id))
+      .map(p => ({ id: p.id, name: p.name, sub: (p.is_available ? '' : 'No disponible · ') + '$' + Number(p.price).toFixed(2) }));
+  }
+
+  addEditProduct(id: number | null) {
+    const p = this.products.find(x => x.id === id);
+    if (!p) return;
+    if (!p.is_available) {
+      this.ui.info(`${p.name} no está disponible hoy`);
+      this.refreshAddOptions();
+      return;
+    }
+    this.editLines = [...this.editLines, { product_id: p.id, name: p.name, price: Number(p.price), quantity: 1, isNew: true }];
+    this.editError = '';
+    this.refreshAddOptions();
+  }
+
+  changeEditQty(l: EditLine, delta: number) {
+    l.quantity = Math.max(0, Math.min(999, l.quantity + delta));
+    if (l.quantity <= 0) {
+      this.editLines = this.editLines.filter(x => x !== l);
+      this.refreshAddOptions();
+    }
+  }
+
+  get editTotal(): number {
+    return Math.round(this.editLines.reduce((s, l) => s + l.quantity * l.price, 0) * 100) / 100;
+  }
+
+  get editIsCash(): boolean {
+    return String(this.editMethods.find(m => m.id === this.editMethodId)?.name ?? '').trim().toLowerCase() === 'efectivo';
+  }
+
+  get editChange(): number | null {
+    if (!this.editPaid || !this.editIsCash || this.editCash === null || (this.editCash as any) === '') return null;
+    return Math.round((Number(this.editCash) - this.editTotal) * 100) / 100;
+  }
+
+  get editOldTotal(): number {
+    return Number(this.editing?.total ?? 0);
+  }
+
+  // Lo que se cobró antes y la diferencia con el nuevo total (para devolver o cobrar la diferencia)
+  get editPrevPaid(): number | null {
+    return this.editing?.payment_status === 'paid' ? Number(this.editing.total) : null;
+  }
+
+  // Métodos para elegir: los activos y, si el cobro se hizo con uno que ya se desactivó, también ese
+  get editMethods(): any[] {
+    const id = this.editing?.payment_method_id;
+    if (!id || this.methods.some(m => m.id === id)) return this.methods;
+    return [...this.methods, { id, name: this.editing.payment_method }];
+  }
+
+  async saveEdit() {
+    if (!this.editing || this.savingEdit) return;
+    this.editError = '';
+    if (!this.editLines.length) {
+      this.editError = 'El pedido debe tener al menos un producto. Si ya no lo quieren, cancélalo.';
+      return;
+    }
+    if (this.editPaid && !this.editMethodId) {
+      this.editError = 'Elige el método de pago';
+      return;
+    }
+    const cash = this.editCash === null || (this.editCash as any) === '' ? null : Number(this.editCash);
+    if (this.editPaid && this.editIsCash && cash !== null && cash < this.editTotal) {
+      this.editError = 'El efectivo recibido no cubre el nuevo total';
+      return;
+    }
+    this.savingEdit = true;
+    try {
+      const r = await this.api.post('orders/edit.php', {
+        order_id: this.editing.id,
+        items: this.editLines.map(l => ({ product_id: l.product_id, quantity: l.quantity })),
+        delivery_mode: this.editMode,
+        customer_name: this.editCustomer.trim(),
+        payment: this.editPaid
+          ? { payment_method_id: this.editMethodId, cash_received: this.editIsCash ? cash ?? this.editTotal : null }
+          : null,
+        reason: this.editReason.trim() || undefined,
+      });
+      const change = r.order?.change_amount;
+      this.ui.success(change ? `Pedido #${this.editing.id} actualizado. Cambio: $${Number(change).toFixed(2)}` : `Pedido #${this.editing.id} actualizado`);
+      this.editing = null;
+      await Promise.all([this.loadActive(), this.loadHistory()]);
+    } catch (e) {
+      this.editError = errorMessage(e, 'No se pudo guardar el pedido');
+    } finally {
+      this.savingEdit = false;
+    }
+  }
+
   // ---------- Detalle y facturación ----------
 
   canInvoice(s: any): boolean {
@@ -202,6 +351,8 @@ export class OrdersPage {
     this.invoice = null;
     this.invoiceError = '';
     this.cardType = null;
+    this.detailEdits = [];
+    if (s.edit_count > 0) this.loadDetailEdits(s);
     if (!this.canInvoice(s)) return;
     this.invoiceLoading = true;
     try {
@@ -210,6 +361,18 @@ export class OrdersPage {
       this.invoiceError = errorMessage(e, 'No se pudo consultar la factura');
     } finally {
       this.invoiceLoading = false;
+    }
+  }
+
+  private async loadDetailEdits(s: any) {
+    this.detailEditsLoading = true;
+    try {
+      const edits = (await this.api.get('orders/edits.php', { id: s.id })).edits;
+      if (this.detail === s) this.detailEdits = edits;
+    } catch {
+      this.detailEdits = [];
+    } finally {
+      this.detailEditsLoading = false;
     }
   }
 
