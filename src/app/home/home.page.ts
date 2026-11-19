@@ -34,19 +34,17 @@ export class HomePage {
 
   constructor(private api: ApiService, private auth: Auth, private billing: BillingService) {}
 
-  // Aviso del plan del negocio: sin plan vigente o por vencer en 5 días o menos
+  // Aviso del plan del negocio: por vencer en 5 días o menos, o cancelado (después pasa al Plan gratuito)
   get planNotice(): { danger: boolean; text: string } | null {
     const s = this.billing.status;
     if (!s) return null;
-    if (!s.subscription) {
-      return { danger: true, text: this.isAdmin
-        ? 'El negocio no tiene un plan vigente: las funciones están bloqueadas.'
-        : 'El plan del negocio terminó. Avisa al administrador.' };
-    }
+    if (!s.subscription) return null;
     const d = s.subscription.days_left;
-    if (d <= 5) {
+    if (d <= 5 || s.subscription.cancel_requested_at) {
       const when = d === 0 ? 'hoy' : `en ${d} ${d === 1 ? 'día' : 'días'}`;
-      return { danger: false, text: `El plan ${s.subscription.plan_name} del negocio termina ${when}.` };
+      const cancelled = s.subscription.cancel_requested_at ? ' Está cancelado.' : '';
+      const next = s.queued?.length ? '' : s.free_plan ? ' Después el negocio pasará al Plan gratuito.' : '';
+      return { danger: false, text: `El plan ${s.subscription.plan_name} del negocio termina ${when}.${cancelled}${next}` };
     }
     return null;
   }

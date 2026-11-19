@@ -53,8 +53,8 @@
     margin: 0;
   }
 
-  &.plan-bronze {
-    border-top-color: #b0703c;
+  &.plan-gratuito {
+    border-top-color: #2f9e62;
   }
 
   &.plan-silver {
@@ -162,4 +162,10 @@
 .checkout-amount {
   font-size: 24px;
   font-weight: 750;
+}
+
+.plan-cancel {
+  display: block;
+  margin-top: 6px;
+  color: var(--danger);
 }

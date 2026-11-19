@@ -40,20 +40,29 @@
         <button class="btn btn-sm" type="button" *ngIf="canUnlock(h)" (click)="openUnlock(h)">Desbloquear</button>
       </div>
 
-      <div class="notice danger" *ngIf="!sub">
-        <app-icon name="alert"></app-icon>
+      <div class="notice" *ngIf="!sub">
+        <app-icon name="info"></app-icon>
         <div class="grow">
-          El negocio no tiene un plan vigente<span *ngIf="s.last_plan"> (el plan {{ lastPlanName }} terminó el {{ s.last_plan.ends_at | dateMx: 'datetime' }})</span>.
-          Las funciones están bloqueadas{{ isAdmin ? ': contrata un plan o desbloquea lo que necesites con créditos.' : '. Avisa al administrador.' }}
+          El negocio está en el <strong>{{ freePlanName }}</strong><span *ngIf="s.last_plan"> (el plan {{ lastPlanName }} terminó el {{ s.last_plan.ends_at | dateMx: 'datetime' }})</span>.
+          {{ isAdmin ? 'Para usar más funciones contrata un plan o desbloquéalas con créditos.' : 'Si necesitas otra función, avisa al administrador.' }}
         </div>
       </div>
 
-      <div class="notice warning" *ngIf="sub && sub.days_left <= 5">
+      <div class="notice warning" *ngIf="sub?.cancel_requested_at">
+        <app-icon name="info"></app-icon>
+        <div class="grow">
+          Plan cancelado el {{ sub?.cancel_requested_at | dateMx }}. Seguirá funcionando hasta el
+          <strong>{{ sub?.ends_at | dateMx: 'datetime' }}</strong> y después el negocio pasará al {{ freePlanName }} (tus datos no se borran).
+        </div>
+        <button class="btn btn-sm" type="button" *ngIf="isAdmin" (click)="resumePlan()">Reactivar</button>
+      </div>
+
+      <div class="notice warning" *ngIf="sub && !sub.cancel_requested_at && sub.days_left <= 5">
         <app-icon name="clock"></app-icon>
         <div class="grow">
           El plan {{ sub.plan_name }} termina el {{ sub.paid_until | dateMx: 'datetime' }}
           ({{ sub.days_left === 0 ? 'hoy' : 'en ' + sub.days_left + (sub.days_left === 1 ? ' día' : ' días') }}).
-          {{ isAdmin ? 'Renuévalo para no perder el acceso.' : '' }}
+          {{ isAdmin ? 'Renuévalo para no volver al ' + freePlanName + '.' : '' }}
         </div>
       </div>
 
@@ -71,14 +80,16 @@
       <div class="grid-3">
         <div class="card kpi">
           <div class="kpi-label"><app-icon name="star"></app-icon>Plan del negocio</div>
-          <div class="kpi-value">{{ sub ? sub.plan_name : 'Sin plan' }}</div>
+          <div class="kpi-value">{{ sub ? sub.plan_name : freePlanName }}</div>
           <div class="kpi-note" *ngIf="sub">
             {{ cycleLabel(sub.cycle) }} · vigente hasta {{ sub.paid_until | dateMx }}
           </div>
           <div class="kpi-note" *ngIf="sub && s.queued.length">
             Ya pagado después: {{ planName(s.queued[0].plan_code) }} desde {{ s.queued[0].starts_at | dateMx }}
           </div>
-          <div class="kpi-note" *ngIf="!sub">Funciones bloqueadas</div>
+          <div class="kpi-note" *ngIf="!sub">Sin costo · no vence</div>
+          <div class="kpi-note text-warning" *ngIf="sub?.cancel_requested_at">Cancelado · no se renovará</div>
+          <button class="link small plan-cancel" type="button" *ngIf="canCancel" (click)="cancelPlan()">Cancelar plan</button>
         </div>
         <div class="card kpi">
           <div class="kpi-label"><app-icon name="coins"></app-icon>Créditos del negocio</div>
@@ -134,20 +145,28 @@
             <span class="badge badge-brand" *ngIf="isCurrent(p)">Tu plan</span>
           </div>
           <p class="small muted">{{ p.description }}</p>
-          <div class="plan-price">
-            <span class="num">{{ price(p) | money }}</span>
-            <span class="muted small">/ {{ cycle === 'annual' ? 'año' : 'mes' }}</span>
+          <div class="plan-price" *ngIf="isFree(p)">
+            <span class="num">Gratis</span>
+            <span class="muted small">siempre</span>
           </div>
-          <div class="small text-success" *ngIf="cycle === 'annual' && saving(p) > 0">Ahorras {{ saving(p) | money }} contra pagar mes a mes</div>
-          <div class="small muted" *ngIf="cycle === 'monthly'">o {{ p.annual_price | money }} al año</div>
+          <ng-container *ngIf="!isFree(p)">
+            <div class="plan-price">
+              <span class="num">{{ price(p) | money }}</span>
+              <span class="muted small">/ {{ cycle === 'annual' ? 'año' : 'mes' }}</span>
+            </div>
+            <div class="small text-success" *ngIf="cycle === 'annual' && saving(p) > 0">Ahorras {{ saving(p) | money }} contra pagar mes a mes</div>
+            <div class="small muted" *ngIf="cycle === 'monthly'">o {{ p.annual_price | money }} al año</div>
+          </ng-container>
+          <div class="small muted" *ngIf="isFree(p) && !isCurrent(p)">Pasas a este plan al cancelar o al terminar tu plan.</div>
           <ul class="plan-features">
             <li><app-icon name="users"></app-icon>{{ usersLabel(p.max_users) }}</li>
             <li *ngFor="let f of s.features" [class.off]="!hasFeature(p, f.key)">
               <app-icon [name]="hasFeature(p, f.key) ? 'check' : 'close'"></app-icon>{{ f.name }}
             </li>
           </ul>
-          <button class="btn btn-block" type="button" *ngIf="isAdmin"
+          <button class="btn btn-block" type="button" *ngIf="isAdmin && !isFree(p)"
             [class.btn-primary]="!isCurrent(p)" (click)="choosePlan(p)">{{ planButton(p) }}</button>
+          <button class="btn btn-block" type="button" *ngIf="isFree(p) && canCancel" (click)="cancelPlan()">Cancelar mi plan y pasar a este</button>
         </div>
       </div>
 
@@ -211,7 +230,7 @@
             <ng-container *ngSwitchCase="'subscriptions'">
               <div class="list-row" *ngFor="let x of history.subscriptions">
                 <div class="grow">
-                  <div class="title">{{ x.plan_name }} · {{ cycleLabel(x.cycle) }}</div>
+                  <div class="title">{{ x.plan_name }} · {{ cycleLabel(x.cycle) }}<span class="text-warning" *ngIf="x.cancel_requested_at && x.state === 'active'"> · cancelado, no se renovará</span></div>
                   <div class="sub">{{ x.starts_at | dateMx }} → {{ x.ends_at | dateMx }}</div>
                 </div>
                 <span class="badge" [ngClass]="statusBadge(x.state)">{{ statusLabel(x.state) }}</span>

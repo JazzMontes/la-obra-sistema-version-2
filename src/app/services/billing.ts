@@ -41,6 +41,9 @@ export interface BillingStatus {
   payment_mode: 'simulated' | 'manual';
   currency: string;
   bank_info: string;
+  // Plan gratuito: el que tiene el negocio cuando no hay uno de paga vigente (no se contrata ni vence)
+  free_plan: string | null;
+  effective_plan: { code: string; name: string } | null;
   subscription: null | {
     id: number;
     plan_code: string;
@@ -51,6 +54,8 @@ export interface BillingStatus {
     ends_at: string;
     paid_until: string;
     days_left: number;
+    // Cancelado al final del periodo: sigue vigente hasta ends_at y ya no se renueva
+    cancel_requested_at: string | null;
   };
   last_plan: null | { plan_code: string; ends_at: string };
   queued: { id: number; plan_code: string; cycle: string; starts_at: string; ends_at: string }[];
@@ -129,12 +134,18 @@ export class BillingService {
     if (!s) return true;
     const f = s.features.find(x => x.key === feature);
     if (!f) return true;
+    if (this.inFreePlan(s, f.key)) return true;
     if (f.in_plan) return this.planStillValid(s);
     return !!f.unlocked_until && !this.passed(f.unlocked_until);
   }
 
   feature(key: string): BillingFeature | undefined {
     return this.status?.features.find(f => f.key === key);
+  }
+
+  // Lo que incluye el Plan gratuito nunca vence
+  private inFreePlan(s: BillingStatus, key: string): boolean {
+    return !!s.free_plan && !!s.plans?.find(p => p.code === s.free_plan)?.features.includes(key);
   }
 
   // El plan guardado sigue vigente según el reloj del dispositivo (por si la app quedó abierta)
@@ -163,6 +174,19 @@ export class BillingService {
 
   async unlock(feature: string, unit: 'hour' | 'day', quantity: number) {
     const r = await this.api.post('billing/unlock.php', { feature, unit, quantity });
+    this.set(r.billing);
+    return r;
+  }
+
+  // Cancelar el plan al final del periodo (y deshacerlo mientras siga vigente)
+  async cancelPlan(reason = '') {
+    const r = await this.api.post('billing/cancel.php', { reason });
+    this.set(r.billing);
+    return r;
+  }
+
+  async resumePlan() {
+    const r = await this.api.post('billing/resume.php', {});
     this.set(r.billing);
     return r;
   }

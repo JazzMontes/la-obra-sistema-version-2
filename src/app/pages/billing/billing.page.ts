@@ -1,5 +1,5 @@
 // Plan y créditos del NEGOCIO que contrata el sistema.
-//   · Planes Bronze, Silver y Gold, mensuales o anuales, cada uno con distintas funciones.
+//   · Plan gratuito, Silver y Gold (los de paga, mensuales o anuales), cada uno con distintas funciones.
 //   · Créditos: se compran con dinero y se gastan en desbloquear una función por horas o días.
 // Todos los usuarios ven qué tiene el negocio; solo un administrador puede contratar o comprar.
 // Los permisos, saldos, compras y vencimientos los controla el servidor (supabase/13_planes_y_creditos.sql).
@@ -10,7 +10,7 @@ import { BillingFeature, BillingPlan, BillingService, BillingStatus } from '../.
 import { errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { autoRefresh } from '../../services/render';
-import { formatMoney } from '../../shared/format.pipes';
+import { formatMoney, parseServerDate } from '../../shared/format.pipes';
 
 type Cycle = 'monthly' | 'annual';
 
@@ -128,8 +128,17 @@ export class BillingPage {
     return Math.max(0, p.monthly_price * 12 - p.annual_price);
   }
 
+  // Plan gratuito: no se contrata; el negocio está en él cuando no tiene un plan de paga vigente
+  isFree(p: BillingPlan): boolean {
+    return !!this.s?.free_plan && p.code === this.s.free_plan;
+  }
+
+  get freePlanName(): string {
+    return this.s?.plans.find(p => p.code === this.s?.free_plan)?.name || 'Plan gratuito';
+  }
+
   isCurrent(p: BillingPlan): boolean {
-    return this.sub?.plan_code === p.code;
+    return this.sub ? this.sub.plan_code === p.code : this.isFree(p);
   }
 
   planButton(p: BillingPlan): string {
@@ -175,7 +184,7 @@ export class BillingPage {
 
   // ---------- Contratar un plan ----------
   choosePlan(p: BillingPlan) {
-    if (!this.isAdmin) return;
+    if (!this.isAdmin || this.isFree(p)) return;
     const changing = !!this.sub && !this.isCurrent(p) && (this.sub.cycle === 'monthly' || this.sub.cycle === 'annual');
     this.openCheckout({
       kind: 'plan',
@@ -235,6 +244,53 @@ export class BillingPage {
     } finally {
       this.paying = false;
     }
+  }
+
+  // ---------- Cancelar el plan (al final del periodo) ----------
+  get canCancel(): boolean {
+    const sub = this.sub;
+    return this.isAdmin && !!sub && !sub.cancel_requested_at && (sub.cycle === 'monthly' || sub.cycle === 'annual');
+  }
+
+  async cancelPlan() {
+    const sub = this.sub;
+    if (!sub || !this.canCancel) return;
+    const queued = this.s?.queued.length
+      ? ' Las renovaciones que ya pagaste y aún no empiezan se cancelan y se te devuelven en créditos.'
+      : '';
+    const ok = await this.ui.confirm(
+      'Cancelar plan',
+      `El plan ${sub.plan_name} seguirá funcionando hasta el ${this.dateText(sub.ends_at)} y ya no se renovará. ` +
+        `Después el negocio pasará al ${this.freePlanName}: solo ventas y gastos; lo demás se bloquea, pero tus datos no se borran.` +
+        `${queued} Puedes reactivarlo antes de esa fecha.`,
+      'Cancelar plan',
+      true
+    );
+    if (!ok) return;
+    try {
+      const r = await this.billing.cancelPlan();
+      this.s = r.billing;
+      this.ui.success(r.message);
+      this.history = await this.billing.history().catch(() => this.history);
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudo cancelar el plan'));
+    }
+  }
+
+  async resumePlan() {
+    try {
+      const r = await this.billing.resumePlan();
+      this.s = r.billing;
+      this.ui.success(r.message);
+      this.history = await this.billing.history().catch(() => this.history);
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudo reactivar el plan'));
+    }
+  }
+
+  private dateText(v: string): string {
+    const d = parseServerDate(v);
+    return d ? new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }).format(d) : v;
   }
 
   async cancelPayment(p: { id: number; description: string }) {

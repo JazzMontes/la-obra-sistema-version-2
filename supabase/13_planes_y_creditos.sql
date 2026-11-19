@@ -1,5 +1,8 @@
 -- =====================================================================
--- La Obra v2 · 13 · Planes de suscripción (Bronze, Silver, Gold) y créditos
+-- La Obra v2 · 13 · Planes de suscripción (Plan gratuito, Silver, Gold) y créditos
+--
+-- El Plan gratuito no se contrata ni vence: es el plan del negocio siempre que no tenga
+-- vigente uno de paga (o la prueba). Al cancelar o al vencer un plan, el negocio pasa a él.
 --
 -- Todo pertenece al NEGOCIO que contrata el sistema (tabla businesses), no a cada usuario:
 --   · El plan, los créditos, los desbloqueos y los pagos son del negocio.
@@ -93,10 +96,12 @@ create table if not exists la_obra_v2.billing_settings (
   payment_mode text not null default 'simulated' check (payment_mode in ('simulated','manual')),
   trial_days   int not null default 30 check (trial_days >= 0),
   trial_plan   varchar(20) not null default 'gold',
+  free_plan    varchar(20) not null default 'gratuito',   -- plan cuando no hay uno de paga vigente
   currency     varchar(3) not null default 'MXN',
   credit_value numeric(10,2) not null default 1.00 check (credit_value > 0),   -- pesos por crédito (para prorrateos)
   bank_info    varchar(255) not null default ''
 );
+alter table la_obra_v2.billing_settings add column if not exists free_plan varchar(20) not null default 'gratuito';
 insert into la_obra_v2.billing_settings(id) values (1) on conflict (id) do nothing;
 
 -- ---------- Movimientos del negocio ----------
@@ -135,6 +140,9 @@ create table if not exists la_obra_v2.subscriptions (
   check (ends_at > starts_at)
 );
 create index if not exists idx_subs_business on la_obra_v2.subscriptions(business_id, starts_at);
+-- Cancelación al final del periodo: el plan sigue vigente hasta ends_at y ya no se renueva
+alter table la_obra_v2.subscriptions add column if not exists cancel_requested_at timestamp null;
+alter table la_obra_v2.subscriptions add column if not exists cancel_reason varchar(255) null;
 
 create table if not exists la_obra_v2.feature_unlocks (
   id              serial primary key,
@@ -182,14 +190,31 @@ insert into la_obra_v2.features(key, name, description, credits_per_hour, credit
 on conflict (key) do nothing;
 
 insert into la_obra_v2.plans(code, name, description, monthly_price, annual_price, max_users, sort) values
-  ('bronze', 'Bronze', 'Lo esencial para vender y cortar caja',                     299.00,  2990.00, 3,    1),
+  ('gratuito', 'Plan gratuito', 'Para empezar sin costo: vender, cortar caja y registrar gastos', 0, 0, 3, 1),
   ('silver', 'Silver', 'Controla inventario, compras, asistencia y reportes',       599.00,  5990.00, 8,    2),
   ('gold',   'Gold',   'Todo el sistema: recetas y costos, facturación y respaldos', 999.00,  9990.00, null, 3)
 on conflict (code) do nothing;
 
+-- Instalaciones anteriores: el plan Bronze se convierte en el Plan gratuito
+-- (sus funciones, su límite de usuarios y su historial pasan al gratuito; precio $0).
+do $$
+begin
+  if exists (select 1 from la_obra_v2.plans where code = 'bronze') then
+    insert into la_obra_v2.plans(code, name, description, monthly_price, annual_price, max_users, sort, status)
+    select 'gratuito', 'Plan gratuito', 'Para empezar sin costo: vender, cortar caja y registrar gastos', 0, 0, max_users, sort, 'active'
+      from la_obra_v2.plans where code = 'bronze'
+    on conflict (code) do nothing;
+    insert into la_obra_v2.plan_features(plan_code, feature_key)
+    select 'gratuito', feature_key from la_obra_v2.plan_features where plan_code = 'bronze'
+    on conflict do nothing;
+    update la_obra_v2.subscriptions set plan_code = 'gratuito' where plan_code = 'bronze';
+    delete from la_obra_v2.plans where code = 'bronze';
+  end if;
+end $$;
+
 insert into la_obra_v2.plan_features(plan_code, feature_key)
 select p, f from (values
-  ('bronze','ventas'), ('bronze','gastos'),
+  ('gratuito','ventas'), ('gratuito','gastos'),
   ('silver','ventas'), ('silver','gastos'), ('silver','inventario'), ('silver','asistencia'), ('silver','reportes'),
   ('gold','ventas'), ('gold','gastos'), ('gold','inventario'), ('gold','asistencia'), ('gold','reportes'),
   ('gold','recetas'), ('gold','facturacion'), ('gold','respaldos')
@@ -257,10 +282,22 @@ returns timestamp language sql stable as $$
      and starts_at <= la_obra_v2.mx_now() and ends_at > la_obra_v2.mx_now();
 $$;
 
+-- Plan con el que trabaja el negocio ahora: el vigente o, si no hay, el Plan gratuito
+create or replace function la_obra_v2.billing_free_plan()
+returns text language sql stable as $$
+  select p.code from la_obra_v2.billing_settings s join la_obra_v2.plans p on p.code = s.free_plan and p.status = 'active'
+   where s.id = 1;
+$$;
+
+create or replace function la_obra_v2.billing_effective_plan(p_business int)
+returns text language sql stable as $$
+  select coalesce((la_obra_v2.billing_current_sub(p_business)).plan_code, la_obra_v2.billing_free_plan());
+$$;
+
 create or replace function la_obra_v2.billing_feature_in_plan(p_business int, p_feature text)
 returns boolean language sql stable as $$
   select exists (select 1 from la_obra_v2.plan_features pf
-                  where pf.plan_code = (la_obra_v2.billing_current_sub(p_business)).plan_code and pf.feature_key = p_feature);
+                  where pf.plan_code = la_obra_v2.billing_effective_plan(p_business) and pf.feature_key = p_feature);
 $$;
 
 -- ¿El negocio puede usar esta función ahora? (por su plan o por créditos)
@@ -270,8 +307,8 @@ returns boolean language sql stable as $$
       or la_obra_v2.billing_unlock_until(p_business, p_feature) is not null;
 $$;
 
--- Usuarios activos que permite el plan vigente (null = sin límite).
--- Sin plan vigente se permite lo del plan más chico, para que el administrador pueda seguir entrando.
+-- Usuarios activos que permite el plan con el que trabaja el negocio (null = sin límite).
+-- Sin plan vigente cuenta el Plan gratuito (o, si no existiera, el plan más chico).
 create or replace function la_obra_v2.billing_max_users(p_business int)
 returns int language plpgsql stable as $$
 declare s la_obra_v2.subscriptions; v int;
@@ -279,6 +316,10 @@ begin
   s := la_obra_v2.billing_current_sub(p_business);
   if s.id is not null then
     select max_users into v from la_obra_v2.plans where code = s.plan_code;
+    return v;
+  end if;
+  if la_obra_v2.billing_free_plan() is not null then
+    select max_users into v from la_obra_v2.plans where code = la_obra_v2.billing_free_plan();
     return v;
   end if;
   select max_users into v from la_obra_v2.plans where status = 'active' order by sort, monthly_price limit 1;
@@ -335,6 +376,10 @@ begin
     'feature', f.key,
     'feature_name', f.name,
     'message', case
+      when (la_obra_v2.billing_current_sub(v_biz)).id is null and la_obra_v2.billing_free_plan() is not null then
+        'El negocio está en el Plan gratuito, que no incluye "' || f.name || '". ' || case when u.role = 'admin'
+          then 'Contrata un plan o desbloquéala con créditos en Plan y créditos.'
+          else 'Pide al administrador que la active.' end
       when (la_obra_v2.billing_current_sub(v_biz)).id is null and v_paid is null then
         'El plan del negocio terminó. ' || case when u.role = 'admin'
           then 'Renuévalo o desbloquea "' || f.name || '" con créditos en Plan y créditos.'
@@ -376,8 +421,8 @@ begin
       select count(*) into v_n from la_obra_v2.users
        where business_id = new.business_id and status = 'active' and role in ('admin','employee') and id <> new.id;
       if v_n >= v_max then
-        select p.name into v_plan from la_obra_v2.plans p where p.code = (la_obra_v2.billing_current_sub(new.business_id)).plan_code;
-        perform la_obra_v2.fail(402, 'El plan ' || coalesce(v_plan, 'actual') || ' permite hasta ' || v_max ||
+        select p.name into v_plan from la_obra_v2.plans p where p.code = la_obra_v2.billing_effective_plan(new.business_id);
+        perform la_obra_v2.fail(402, 'El ' || coalesce(case when v_plan ilike 'plan %' then v_plan else 'plan ' || v_plan end, 'plan actual') || ' permite hasta ' || v_max ||
           ' usuarios activos y ya tienes ' || v_n || '. Desactiva una cuenta o mejora el plan en Plan y créditos.',
           jsonb_build_object('plan_required', true, 'limit', 'users', 'max_users', v_max));
       end if;
@@ -448,6 +493,8 @@ begin
       -- Renovación del mismo plan: empieza cuando termina lo ya pagado
       v_start := greatest(v_now, coalesce(la_obra_v2.billing_paid_until(pay.business_id), v_now));
       v_note := 'Renovación: empieza el ' || to_char(v_start, 'DD/MM/YYYY');
+      -- Si estaba cancelado, renovar significa que el negocio sigue: se quita la cancelación
+      update la_obra_v2.subscriptions set cancel_requested_at = null, cancel_reason = null where id = cur.id;
     else
       -- Plan nuevo o cambio de plan: empieza ahora. Lo no usado del plan anterior (y de renovaciones
       -- futuras ya pagadas) se devuelve en créditos, para no cobrar dos veces el mismo tiempo.
@@ -541,11 +588,15 @@ begin
     'payment_mode', st.payment_mode,
     'currency', st.currency,
     'bank_info', st.bank_info,
+    'free_plan', la_obra_v2.billing_free_plan(),
+    'effective_plan', (select jsonb_build_object('code', p.code, 'name', p.name) from la_obra_v2.plans p
+                        where p.code = la_obra_v2.billing_effective_plan(p_business)),
     'subscription', case when cur.id is null then null else jsonb_build_object(
       'id', cur.id, 'plan_code', cur.plan_code, 'plan_name', pl.name, 'cycle', cur.billing_cycle, 'price', cur.price,
       'starts_at', la_obra_v2.fmt_ts(cur.starts_at), 'ends_at', la_obra_v2.fmt_ts(cur.ends_at),
       'paid_until', la_obra_v2.fmt_ts(v_paid),
-      'days_left', greatest(0, ceil(extract(epoch from (v_paid - v_now)) / 86400))::int) end,
+      'days_left', greatest(0, ceil(extract(epoch from (v_paid - v_now)) / 86400))::int,
+      'cancel_requested_at', la_obra_v2.fmt_ts(cur.cancel_requested_at)) end,
     'last_plan', case when cur.id is null and v_last.id is not null then jsonb_build_object(
       'plan_code', v_last.plan_code, 'ends_at', la_obra_v2.fmt_ts(v_last.ends_at)) end,
     'queued', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'plan_code', s.plan_code, 'cycle', s.billing_cycle,
@@ -603,6 +654,9 @@ begin
   v_biz := la_obra_v2.user_business(u);
   select * into pl from la_obra_v2.plans where code = lower(la_obra_v2.jstr(b -> 'plan_code')) and status = 'active';
   if pl.code is null then perform la_obra_v2.fail(422, 'Elige un plan válido'); end if;
+  if pl.code = la_obra_v2.billing_free_plan() then
+    perform la_obra_v2.fail(422, 'El Plan gratuito no se contrata: el negocio pasa a él solo cuando cancelas o termina tu plan. Usa "Cancelar plan".');
+  end if;
   v_cycle := la_obra_v2.jstr(b -> 'cycle');
   if v_cycle not in ('monthly','annual') then perform la_obra_v2.fail(422, 'Elige pago mensual o anual'); end if;
   v_price := case when v_cycle = 'annual' then pl.annual_price else pl.monthly_price end;
@@ -702,6 +756,70 @@ begin
   return la_obra_v2.ok(200, 'Pago cancelado', jsonb_build_object('billing', la_obra_v2.billing_status_json(v_biz, true)));
 end $$;
 
+-- billing/cancel · POST {reason?} · cancela el plan AL FINAL DEL PERIODO
+--   · El plan actual sigue funcionando hasta su fecha de vencimiento; después el negocio pasa al Plan gratuito.
+--   · Las renovaciones ya pagadas que aún no empiezan se cancelan y su precio se devuelve en créditos.
+--   · Se puede deshacer con billing/resume mientras el plan siga vigente.
+create or replace function la_obra_v2.ep_billing__cancel(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions; x record; st la_obra_v2.billing_settings;
+        v_now timestamp := la_obra_v2.mx_now(); v_refund int := 0; v_cr int; v_n int := 0; v_msg text;
+begin
+  perform la_obra_v2.method(m, 'POST');
+  u := la_obra_v2.auth_long(t, true, 'Solo un administrador del negocio puede cancelar el plan');
+  v_biz := la_obra_v2.user_business(u);
+  select * into st from la_obra_v2.billing_settings where id = 1;
+  perform 1 from la_obra_v2.businesses where id = v_biz for update;
+  cur := la_obra_v2.billing_current_sub(v_biz);
+  if cur.id is null then perform la_obra_v2.fail(409, 'El negocio no tiene un plan vigente que cancelar'); end if;
+  if cur.cancel_requested_at is not null then perform la_obra_v2.fail(409, 'El plan ya está cancelado'); end if;
+
+  -- Renovaciones futuras ya pagadas: se cancelan y se devuelven en créditos
+  for x in select * from la_obra_v2.subscriptions
+            where business_id = v_biz and status = 'active' and starts_at > v_now for update loop
+    update la_obra_v2.subscriptions set status = 'cancelled', closed_at = v_now where id = x.id;
+    v_n := v_n + 1;
+    if x.billing_cycle in ('monthly','annual') and x.price > 0 then
+      v_cr := floor(x.price / st.credit_value)::int;
+      if v_cr > 0 then
+        perform la_obra_v2.credit_move(v_biz, 'refund', v_cr,
+          'Renovación cancelada: ' || (select name from la_obra_v2.plans where code = x.plan_code) || ' desde ' || to_char(x.starts_at, 'DD/MM/YYYY'),
+          u.id, u.name);
+        v_refund := v_refund + v_cr;
+      end if;
+    end if;
+  end loop;
+
+  update la_obra_v2.subscriptions set cancel_requested_at = v_now, cancel_reason = nullif(left(la_obra_v2.jstr(coalesce(b, '{}'::jsonb) -> 'reason'), 255), '')
+   where id = cur.id;
+  v_msg := 'Plan cancelado. Seguirá funcionando hasta el ' || to_char(cur.ends_at, 'DD/MM/YYYY HH24:MI') ||
+           case when la_obra_v2.billing_free_plan() is not null then ' y después el negocio pasará al Plan gratuito.'
+                else ' y ya no se renovará.' end;
+  if v_n > 0 then
+    v_msg := v_msg || case when v_n = 1 then ' Se canceló la renovación que ya estaba pagada'
+                           else ' Se cancelaron ' || v_n || ' renovaciones que ya estaban pagadas' end ||
+             case when v_refund > 0 then ' y se devolvieron ' || v_refund || ' créditos.' else '.' end;
+  end if;
+  return la_obra_v2.ok(200, v_msg, jsonb_build_object('refunded_credits', v_refund,
+    'billing', la_obra_v2.billing_status_json(v_biz, true)));
+end $$;
+
+-- billing/resume · POST · deshace la cancelación mientras el plan siga vigente
+create or replace function la_obra_v2.ep_billing__resume(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions;
+begin
+  perform la_obra_v2.method(m, 'POST');
+  u := la_obra_v2.auth_long(t, true, 'Solo un administrador del negocio puede reactivar el plan');
+  v_biz := la_obra_v2.user_business(u);
+  cur := la_obra_v2.billing_current_sub(v_biz);
+  if cur.id is null then perform la_obra_v2.fail(409, 'El plan ya terminó. Contrata uno nuevo en Planes.'); end if;
+  if cur.cancel_requested_at is null then perform la_obra_v2.fail(409, 'El plan no está cancelado'); end if;
+  update la_obra_v2.subscriptions set cancel_requested_at = null, cancel_reason = null where id = cur.id;
+  return la_obra_v2.ok(200, 'Plan reactivado. Recuerda renovarlo antes del ' || to_char(cur.ends_at, 'DD/MM/YYYY') || '.',
+    jsonb_build_object('billing', la_obra_v2.billing_status_json(v_biz, true)));
+end $$;
+
 -- billing/history · pagos, movimientos de créditos, desbloqueos y planes (solo administradores)
 create or replace function la_obra_v2.ep_billing__history(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
@@ -729,7 +847,8 @@ begin
     'subscriptions', (select coalesce(jsonb_agg(jsonb_build_object('id', s.id, 'plan_code', s.plan_code, 'plan_name', p.name,
         'cycle', s.billing_cycle, 'price', s.price, 'starts_at', la_obra_v2.fmt_ts(s.starts_at), 'ends_at', la_obra_v2.fmt_ts(s.ends_at),
         'state', case when s.status <> 'active' then s.status when s.ends_at <= v_now then 'expired'
-                      when s.starts_at > v_now then 'scheduled' else 'active' end) order by s.starts_at desc, s.id desc), '[]')
+                      when s.starts_at > v_now then 'scheduled' else 'active' end,
+        'cancel_requested_at', la_obra_v2.fmt_ts(s.cancel_requested_at)) order by s.starts_at desc, s.id desc), '[]')
       from (select * from la_obra_v2.subscriptions where business_id = v_biz order by starts_at desc limit 50) s
       join la_obra_v2.plans p on p.code = s.plan_code)));
 end $$;
@@ -743,7 +862,7 @@ end $$;
 --   select la_obra_v2.proveedor_rechazar_pago(6, 'No se recibió la transferencia');
 --   select la_obra_v2.proveedor_regalar_creditos(50, 'Compensación');
 --   select la_obra_v2.proveedor_asignar_plan('gold', 30);        -- 30 días de Gold sin cobro
---   update la_obra_v2.plans set monthly_price = 349 where code = 'bronze';   -- cambiar precios
+--   update la_obra_v2.plans set monthly_price = 349 where code = 'silver';   -- cambiar precios
 -- =====================================================================
 create or replace function la_obra_v2.proveedor_modo_pago(p_mode text)
 returns text language plpgsql as $$

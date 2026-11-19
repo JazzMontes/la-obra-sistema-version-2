@@ -157,13 +157,15 @@ export class AppComponent implements OnDestroy {
   get planLabel(): string {
     const s = this.billing.status;
     if (!s) return '';
-    const plan = s.subscription ? s.subscription.plan_name + (s.subscription.cycle === 'trial' ? ' (prueba)' : '') : 'Sin plan vigente';
+    const plan = s.subscription
+      ? s.subscription.plan_name + (s.subscription.cycle === 'trial' ? ' (prueba)' : '')
+      : s.effective_plan?.name || 'Plan gratuito';
     return `${plan} · ${s.credits} créditos`;
   }
 
   get planWarning(): boolean {
     const s = this.billing.status;
-    return !!s && (!s.subscription || s.subscription.days_left <= 5);
+    return !!s?.subscription && (s.subscription.days_left <= 5 || !!s.subscription.cancel_requested_at);
   }
 
   get initials(): string {
