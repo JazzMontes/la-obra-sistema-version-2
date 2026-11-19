@@ -55,9 +55,17 @@ export interface BillingStatus {
     ends_at: string;
     paid_until: string;
     days_left: number;
-    // Cancelado al final del periodo: sigue vigente hasta ends_at y ya no se renueva
+    // Cancelado: sigue vigente hasta ends_at (el fin del mes en curso) y después pasa al Plan gratuito
     cancel_requested_at: string | null;
+    // Si se cancelara hoy: hasta cuándo seguiría y cuántos créditos se devolverían
+    // (ya cancelado: su fecha de fin y los créditos que se devolvieron)
+    cancel_at: string;
+    cancel_refund: number;
+    // Créditos que se abonarían hoy al cambiar a otro plan (lo que sobra del actual)
+    change_refund: number;
   };
+  // Regla de devolución: `credits` créditos por cada `pesos` pesos del tiempo que sobraba
+  refund_rule?: { pesos: number; credits: number };
   last_plan: null | { plan_code: string; ends_at: string };
   queued: { id: number; plan_code: string; cycle: string; starts_at: string; ends_at: string }[];
   users: { active: number; max: number | null };

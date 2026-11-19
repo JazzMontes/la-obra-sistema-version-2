@@ -4281,6 +4281,10 @@ create table if not exists la_obra_v2.billing_settings (
   bank_info    varchar(255) not null default ''
 );
 alter table la_obra_v2.billing_settings add column if not exists free_plan varchar(20) not null default 'gratuito';
+-- Devolución en créditos del tiempo no usado de un plan (al cambiar de plan o cancelar un anual):
+-- refund_credits créditos por cada refund_pesos pesos, en proporción a los días que sobraban.
+alter table la_obra_v2.billing_settings add column if not exists refund_pesos numeric(10,2) not null default 500 check (refund_pesos > 0);
+alter table la_obra_v2.billing_settings add column if not exists refund_credits int not null default 10 check (refund_credits >= 0);
 insert into la_obra_v2.billing_settings(id) values (1) on conflict (id) do nothing;
 
 -- ---------- Movimientos del negocio ----------
@@ -4322,6 +4326,10 @@ create index if not exists idx_subs_business on la_obra_v2.subscriptions(busines
 -- Cancelación al final del periodo: el plan sigue vigente hasta ends_at y ya no se renueva
 alter table la_obra_v2.subscriptions add column if not exists cancel_requested_at timestamp null;
 alter table la_obra_v2.subscriptions add column if not exists cancel_reason varchar(255) null;
+-- Al cancelar, el plan termina al acabar el mes en curso: se guarda la fecha original (para Reactivar)
+-- y los créditos que se devolvieron por los meses que ya no se usarán (se descuentan si se reactiva).
+alter table la_obra_v2.subscriptions add column if not exists cancel_original_ends_at timestamp null;
+alter table la_obra_v2.subscriptions add column if not exists cancel_refund_credits int null;
 
 create table if not exists la_obra_v2.feature_unlocks (
   id              serial primary key,
@@ -4635,13 +4643,51 @@ begin
   return v_bal + p_amount;
 end $$;
 
+-- ---------- Devoluciones en créditos ----------
+-- Pesos → créditos según la regla (por defecto 10 créditos por cada $500), hacia abajo.
+create or replace function la_obra_v2.billing_refund_credits(p_value numeric)
+returns int language sql stable as $$
+  select greatest(0, floor(coalesce(p_value, 0) * s.refund_credits / s.refund_pesos))::int
+    from la_obra_v2.billing_settings s where s.id = 1;
+$$;
+
+-- Valor en pesos del tiempo que le queda a un plan pagado desde p_at (0 si es prueba, cortesía o ya pasó).
+-- Se calcula sobre el periodo que se pagó (si se canceló, sobre su fecha original).
+create or replace function la_obra_v2.billing_leftover_value(x la_obra_v2.subscriptions, p_at timestamp)
+returns numeric language sql stable as $$
+  select case
+    when x.billing_cycle not in ('monthly','annual') or x.price <= 0 or x.ends_at <= p_at then 0
+    else x.price * extract(epoch from (x.ends_at - greatest(x.starts_at, p_at)))
+                 / extract(epoch from (coalesce(x.cancel_original_ends_at, x.ends_at) - x.starts_at)) end;
+$$;
+
+-- Fecha en que termina un plan si se cancela en p_at: al acabar el mes en curso de ese plan
+-- (mensual: su fecha de vencimiento; anual: el siguiente corte mensual; nunca después de su vencimiento).
+create or replace function la_obra_v2.billing_cancel_cut(x la_obra_v2.subscriptions, p_at timestamp)
+returns timestamp language plpgsql stable as $$
+declare k int := 1;
+begin
+  if x.starts_at > p_at then return x.starts_at; end if;
+  k := greatest(1, (extract(year from age(p_at, x.starts_at)) * 12 + extract(month from age(p_at, x.starts_at)))::int);
+  while x.starts_at + make_interval(months => k) <= p_at loop k := k + 1; end loop;
+  return least(x.ends_at, x.starts_at + make_interval(months => k));
+end $$;
+
+-- Créditos que se abonarían HOY al cambiar de plan (lo que sobra del plan actual y renovaciones ya pagadas)
+create or replace function la_obra_v2.billing_change_refund(p_business int)
+returns int language sql stable as $$
+  select la_obra_v2.billing_refund_credits(sum(la_obra_v2.billing_leftover_value(s, la_obra_v2.mx_now())))
+    from la_obra_v2.subscriptions s
+   where s.business_id = p_business and s.status = 'active' and s.ends_at > la_obra_v2.mx_now();
+$$;
+
 -- ---------- Aplicar un pago ya aprobado ----------
 -- Suscripción: la activa (renovación, primera contratación o cambio de plan con prorrateo).
 -- Créditos: los suma al saldo.
 create or replace function la_obra_v2.billing_apply_payment(p_payment int)
 returns jsonb language plpgsql as $$
 declare
-  pay la_obra_v2.billing_payments; cur la_obra_v2.subscriptions; q record; pl la_obra_v2.plans; st la_obra_v2.billing_settings;
+  pay la_obra_v2.billing_payments; cur la_obra_v2.subscriptions; q la_obra_v2.subscriptions; pl la_obra_v2.plans; st la_obra_v2.billing_settings;
   v_now timestamp := la_obra_v2.mx_now(); v_start timestamp; v_end timestamp; v_cycle text; v_plan text;
   v_refund numeric; v_cr int; v_sub int; v_note text := ''; v_pkg la_obra_v2.credit_packages;
 begin
@@ -4673,25 +4719,26 @@ begin
       v_start := greatest(v_now, coalesce(la_obra_v2.billing_paid_until(pay.business_id), v_now));
       v_note := 'Renovación: empieza el ' || to_char(v_start, 'DD/MM/YYYY');
       -- Si estaba cancelado, renovar significa que el negocio sigue: se quita la cancelación
-      update la_obra_v2.subscriptions set cancel_requested_at = null, cancel_reason = null where id = cur.id;
+      -- (si se había recortado al cancelar, se queda la fecha recortada: lo nuevo empieza ahí)
+      update la_obra_v2.subscriptions set cancel_requested_at = null, cancel_reason = null,
+             cancel_original_ends_at = null, cancel_refund_credits = null where id = cur.id;
     else
-      -- Plan nuevo o cambio de plan: empieza ahora. Lo no usado del plan anterior (y de renovaciones
-      -- futuras ya pagadas) se devuelve en créditos, para no cobrar dos veces el mismo tiempo.
+      -- Plan nuevo o cambio de plan (subir o bajar): empieza ahora y se paga completo.
+      -- Lo que sobraba del plan anterior (y de renovaciones ya pagadas) se abona en créditos:
+      -- refund_credits por cada refund_pesos (10 por cada $500), en proporción a los días que sobraban.
       v_start := v_now;
       v_refund := 0;
       for q in select * from la_obra_v2.subscriptions
                 where business_id = pay.business_id and status = 'active' and ends_at > v_now for update loop
-        if q.billing_cycle in ('monthly','annual') and q.price > 0 then
-          v_refund := v_refund + q.price * extract(epoch from (q.ends_at - greatest(q.starts_at, v_now)))
-                                         / extract(epoch from (q.ends_at - q.starts_at));
-        end if;
+        v_refund := v_refund + la_obra_v2.billing_leftover_value(q, v_now);
         update la_obra_v2.subscriptions set status = 'replaced', closed_at = v_now where id = q.id;
       end loop;
-      v_cr := floor(v_refund / st.credit_value)::int;
+      v_cr := la_obra_v2.billing_refund_credits(v_refund);
       if v_cr > 0 then
         perform la_obra_v2.credit_move(pay.business_id, 'proration', v_cr,
-          'Tiempo no usado del plan anterior al cambiar a ' || pl.name, pay.created_by, pay.created_by_name, null, pay.id);
-        v_note := 'Se abonaron ' || v_cr || ' créditos por el tiempo no usado del plan anterior';
+          'Tiempo no usado del plan anterior (' || to_char(v_refund, 'FM999,990.00') || ' pesos) al cambiar a ' || pl.name,
+          pay.created_by, pay.created_by_name, null, pay.id);
+        v_note := 'Se abonaron ' || v_cr || ' créditos por el tiempo que te sobraba del plan anterior';
       else
         v_note := 'Plan activo desde hoy';
       end if;
@@ -4812,7 +4859,16 @@ begin
       'starts_at', la_obra_v2.fmt_ts(cur.starts_at), 'ends_at', la_obra_v2.fmt_ts(cur.ends_at),
       'paid_until', la_obra_v2.fmt_ts(v_paid),
       'days_left', greatest(0, ceil(extract(epoch from (v_paid - v_now)) / 86400))::int,
-      'cancel_requested_at', la_obra_v2.fmt_ts(cur.cancel_requested_at)) end,
+      'cancel_requested_at', la_obra_v2.fmt_ts(cur.cancel_requested_at),
+      -- Para la pantalla: qué pasaría si se cancela hoy y cuántos créditos daría un cambio de plan
+      'cancel_at', la_obra_v2.fmt_ts(case when cur.cancel_requested_at is null then la_obra_v2.billing_cancel_cut(cur, v_now) else cur.ends_at end),
+      'cancel_refund', case when cur.cancel_requested_at is null
+         then la_obra_v2.billing_refund_credits(la_obra_v2.billing_leftover_value(cur, la_obra_v2.billing_cancel_cut(cur, v_now)))
+              + coalesce((select sum(la_obra_v2.billing_refund_credits(la_obra_v2.billing_leftover_value(z, v_now)))::int
+                            from la_obra_v2.subscriptions z where z.business_id = p_business and z.status = 'active' and z.starts_at > v_now), 0)
+         else coalesce(cur.cancel_refund_credits, 0) end,
+      'change_refund', la_obra_v2.billing_change_refund(p_business)) end,
+    'refund_rule', jsonb_build_object('pesos', st.refund_pesos, 'credits', st.refund_credits),
     'last_plan', case when cur.id is null and v_last.id is not null then jsonb_build_object(
       'plan_code', v_last.plan_code, 'ends_at', la_obra_v2.fmt_ts(v_last.ends_at)) end,
     'queued', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'plan_code', s.plan_code, 'cycle', s.billing_cycle,
@@ -4972,67 +5028,105 @@ begin
   return la_obra_v2.ok(200, 'Pago cancelado', jsonb_build_object('billing', la_obra_v2.billing_status_json(v_biz, true)));
 end $$;
 
--- billing/cancel · POST {reason?} · cancela el plan AL FINAL DEL PERIODO
---   · El plan actual sigue funcionando hasta su fecha de vencimiento; después el negocio pasa al Plan gratuito.
---   · Las renovaciones ya pagadas que aún no empiezan se cancelan y su precio se devuelve en créditos.
---   · Se puede deshacer con billing/resume mientras el plan siga vigente.
+-- billing/cancel · POST {reason?} · cancela CUALQUIER plan vigente (mensual, anual, prueba o cortesía)
+--   · El plan se quita al acabar el mes en curso (mensual: en su fecha de vencimiento; anual: en el
+--     siguiente corte mensual). Después el negocio pasa al Plan gratuito.
+--   · Si era anual, los meses que ya no se usarán se devuelven en créditos (10 por cada $500).
+--   · Las renovaciones ya pagadas que aún no empiezan se cancelan y se devuelven con la misma regla.
+--   · Se puede deshacer con billing/resume antes de que termine.
 create or replace function la_obra_v2.ep_billing__cancel(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions; x record; st la_obra_v2.billing_settings;
-        v_now timestamp := la_obra_v2.mx_now(); v_refund int := 0; v_cr int; v_n int := 0; v_msg text;
+declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions; x la_obra_v2.subscriptions;
+        v_now timestamp := la_obra_v2.mx_now(); v_cut timestamp; v_left numeric; v_cr int := 0; v_qcr int;
+        v_qrefund int := 0; v_n int := 0; v_msg text;
 begin
   perform la_obra_v2.method(m, 'POST');
   u := la_obra_v2.auth_long(t, true, 'Solo un administrador del negocio puede cancelar el plan');
   v_biz := la_obra_v2.user_business(u);
-  select * into st from la_obra_v2.billing_settings where id = 1;
   perform 1 from la_obra_v2.businesses where id = v_biz for update;
   cur := la_obra_v2.billing_current_sub(v_biz);
-  if cur.id is null then perform la_obra_v2.fail(409, 'El negocio no tiene un plan vigente que cancelar'); end if;
+  if cur.id is null then perform la_obra_v2.fail(409, 'El negocio ya está en el Plan gratuito: no hay un plan que cancelar'); end if;
   if cur.cancel_requested_at is not null then perform la_obra_v2.fail(409, 'El plan ya está cancelado'); end if;
+  select * into cur from la_obra_v2.subscriptions where id = cur.id for update;
 
-  -- Renovaciones futuras ya pagadas: se cancelan y se devuelven en créditos
+  -- 1) El plan actual termina al acabar el mes en curso; lo que sobra después se devuelve en créditos
+  v_cut := la_obra_v2.billing_cancel_cut(cur, v_now);
+  if v_cut < cur.ends_at then
+    v_left := la_obra_v2.billing_leftover_value(cur, v_cut);
+    v_cr := la_obra_v2.billing_refund_credits(v_left);
+  end if;
+  update la_obra_v2.subscriptions
+     set cancel_requested_at = v_now,
+         cancel_reason = nullif(left(la_obra_v2.jstr(coalesce(b, '{}'::jsonb) -> 'reason'), 255), ''),
+         cancel_original_ends_at = ends_at,
+         cancel_refund_credits = v_cr,
+         ends_at = v_cut
+   where id = cur.id;
+  if v_cr > 0 then
+    perform la_obra_v2.credit_move(v_biz, 'refund', v_cr,
+      'Cancelación: meses no usados del plan ' || (select name from la_obra_v2.plans where code = cur.plan_code) ||
+      ' (' || to_char(v_left, 'FM999,990.00') || ' pesos)', u.id, u.name);
+  end if;
+
+  -- 2) Renovaciones futuras ya pagadas: se cancelan y se devuelven en créditos
   for x in select * from la_obra_v2.subscriptions
             where business_id = v_biz and status = 'active' and starts_at > v_now for update loop
     update la_obra_v2.subscriptions set status = 'cancelled', closed_at = v_now where id = x.id;
     v_n := v_n + 1;
-    if x.billing_cycle in ('monthly','annual') and x.price > 0 then
-      v_cr := floor(x.price / st.credit_value)::int;
-      if v_cr > 0 then
-        perform la_obra_v2.credit_move(v_biz, 'refund', v_cr,
-          'Renovación cancelada: ' || (select name from la_obra_v2.plans where code = x.plan_code) || ' desde ' || to_char(x.starts_at, 'DD/MM/YYYY'),
-          u.id, u.name);
-        v_refund := v_refund + v_cr;
-      end if;
+    v_qcr := la_obra_v2.billing_refund_credits(la_obra_v2.billing_leftover_value(x, v_now));
+    if v_qcr > 0 then
+      perform la_obra_v2.credit_move(v_biz, 'refund', v_qcr,
+        'Renovación cancelada: ' || (select name from la_obra_v2.plans where code = x.plan_code) || ' desde ' || to_char(x.starts_at, 'DD/MM/YYYY'),
+        u.id, u.name);
+      v_qrefund := v_qrefund + v_qcr;
     end if;
   end loop;
 
-  update la_obra_v2.subscriptions set cancel_requested_at = v_now, cancel_reason = nullif(left(la_obra_v2.jstr(coalesce(b, '{}'::jsonb) -> 'reason'), 255), '')
-   where id = cur.id;
-  v_msg := 'Plan cancelado. Seguirá funcionando hasta el ' || to_char(cur.ends_at, 'DD/MM/YYYY HH24:MI') ||
+  v_msg := 'Plan cancelado. Seguirá funcionando hasta el ' || to_char(v_cut, 'DD/MM/YYYY HH24:MI') ||
            case when la_obra_v2.billing_free_plan() is not null then ' y después el negocio pasará al Plan gratuito.'
-                else ' y ya no se renovará.' end;
+                else '.' end;
+  if v_cr > 0 then
+    v_msg := v_msg || ' Por los meses que ya no usarás se devolvieron ' || v_cr || ' créditos.';
+  end if;
   if v_n > 0 then
     v_msg := v_msg || case when v_n = 1 then ' Se canceló la renovación que ya estaba pagada'
                            else ' Se cancelaron ' || v_n || ' renovaciones que ya estaban pagadas' end ||
-             case when v_refund > 0 then ' y se devolvieron ' || v_refund || ' créditos.' else '.' end;
+             case when v_qrefund > 0 then ' y se devolvieron ' || v_qrefund || ' créditos.' else '.' end;
   end if;
-  return la_obra_v2.ok(200, v_msg, jsonb_build_object('refunded_credits', v_refund,
+  return la_obra_v2.ok(200, v_msg, jsonb_build_object('refunded_credits', v_cr + v_qrefund, 'ends_at', la_obra_v2.fmt_ts(v_cut),
     'billing', la_obra_v2.billing_status_json(v_biz, true)));
 end $$;
 
--- billing/resume · POST · deshace la cancelación mientras el plan siga vigente
+-- billing/resume · POST · deshace la cancelación antes de que el plan termine.
+-- Regresa la fecha original y descuenta los créditos que se habían devuelto por los meses recortados
+-- (las renovaciones canceladas no regresan: sus créditos se quedan en el saldo).
 create or replace function la_obra_v2.ep_billing__resume(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$
-declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions;
+declare u la_obra_v2.users; v_biz int; cur la_obra_v2.subscriptions; v_bal int; v_end timestamp;
 begin
   perform la_obra_v2.method(m, 'POST');
   u := la_obra_v2.auth_long(t, true, 'Solo un administrador del negocio puede reactivar el plan');
   v_biz := la_obra_v2.user_business(u);
+  perform 1 from la_obra_v2.businesses where id = v_biz for update;
   cur := la_obra_v2.billing_current_sub(v_biz);
   if cur.id is null then perform la_obra_v2.fail(409, 'El plan ya terminó. Contrata uno nuevo en Planes.'); end if;
   if cur.cancel_requested_at is null then perform la_obra_v2.fail(409, 'El plan no está cancelado'); end if;
-  update la_obra_v2.subscriptions set cancel_requested_at = null, cancel_reason = null where id = cur.id;
-  return la_obra_v2.ok(200, 'Plan reactivado. Recuerda renovarlo antes del ' || to_char(cur.ends_at, 'DD/MM/YYYY') || '.',
+  if coalesce(cur.cancel_refund_credits, 0) > 0 then
+    select credit_balance into v_bal from la_obra_v2.businesses where id = v_biz;
+    if v_bal < cur.cancel_refund_credits then
+      perform la_obra_v2.fail(402, 'Para reactivar el plan se descuentan los ' || cur.cancel_refund_credits ||
+        ' créditos que se te devolvieron al cancelar, y tienes ' || v_bal || '.');
+    end if;
+    perform la_obra_v2.credit_move(v_biz, 'adjust', -cur.cancel_refund_credits,
+      'Reactivación del plan: se descuentan los créditos devueltos al cancelar', u.id, u.name);
+  end if;
+  v_end := coalesce(cur.cancel_original_ends_at, cur.ends_at);
+  update la_obra_v2.subscriptions
+     set cancel_requested_at = null, cancel_reason = null, ends_at = v_end,
+         cancel_original_ends_at = null, cancel_refund_credits = null
+   where id = cur.id;
+  return la_obra_v2.ok(200, 'Plan reactivado hasta el ' || to_char(v_end, 'DD/MM/YYYY') ||
+    case when coalesce(cur.cancel_refund_credits, 0) > 0 then '. Se descontaron ' || cur.cancel_refund_credits || ' créditos.' else '.' end,
     jsonb_build_object('billing', la_obra_v2.billing_status_json(v_biz, true)));
 end $$;
 

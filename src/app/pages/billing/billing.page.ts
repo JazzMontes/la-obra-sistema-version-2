@@ -182,7 +182,8 @@ export class BillingPage {
   // ---------- Contratar un plan ----------
   choosePlan(p: BillingPlan) {
     if (!this.isAdmin || this.isFree(p)) return;
-    const changing = !!this.sub && !this.isCurrent(p) && (this.sub.cycle === 'monthly' || this.sub.cycle === 'annual');
+    const changing = !!this.sub && !this.isCurrent(p);
+    const back = this.sub?.change_refund ?? 0;
     this.openCheckout({
       kind: 'plan',
       plan: p,
@@ -191,7 +192,10 @@ export class BillingPage {
       note: this.isCurrent(p) && this.sub?.cycle !== 'trial' && this.sub?.cycle !== 'gift'
         ? 'Se suma al final de lo que ya tienes pagado.'
         : changing
-          ? `Empieza hoy. El tiempo que no usaste del plan ${this.sub?.plan_name} se te devuelve en créditos.`
+          ? `Empieza hoy y se paga completo. ` +
+            (back > 0
+              ? `Por el tiempo que te sobra del plan ${this.sub?.plan_name} se te abonan ${back} créditos (${this.refundRuleText}).`
+              : `Lo que te sobra del plan ${this.sub?.plan_name} no alcanza para créditos (${this.refundRuleText}).`)
           : 'Empieza hoy.',
     });
   }
@@ -294,22 +298,34 @@ export class BillingPage {
   }
 
   // ---------- Cancelar el plan (al final del periodo) ----------
+  // Cualquier plan vigente (mensual, anual, prueba o cortesía) se puede cancelar
   get canCancel(): boolean {
     const sub = this.sub;
-    return this.isAdmin && !!sub && !sub.cancel_requested_at && (sub.cycle === 'monthly' || sub.cycle === 'annual');
+    return this.isAdmin && !!sub && !sub.cancel_requested_at;
+  }
+
+  get refundRuleText(): string {
+    const r = this.s?.refund_rule;
+    return r ? `${r.credits} créditos por cada ${formatMoney(r.pesos)}, según los días que sobraban` : 'según los días que sobraban';
   }
 
   async cancelPlan() {
     const sub = this.sub;
     if (!sub || !this.canCancel) return;
-    const queued = this.s?.queued.length
-      ? ' Las renovaciones que ya pagaste y aún no empiezan se cancelan y se te devuelven en créditos.'
+    const shortened = sub.cancel_at !== sub.ends_at;
+    const parts: string[] = [];
+    if (shortened) parts.push('los meses de tu plan anual que ya no usarás');
+    if (this.s?.queued.length) parts.push('las renovaciones que ya pagaste y aún no empiezan');
+    const refund = parts.length
+      ? sub.cancel_refund > 0
+        ? ` Por ${parts.join(' y ')} se te devuelven ${sub.cancel_refund} créditos (${this.refundRuleText}).`
+        : ` ${parts.join(' y ')} no alcanzan para créditos.`
       : '';
     const ok = await this.ui.confirm(
       'Cancelar plan',
-      `El plan ${sub.plan_name} seguirá funcionando hasta el ${this.dateText(sub.ends_at)} y ya no se renovará. ` +
+      `El plan ${sub.plan_name} se quitará al terminar el mes en curso: seguirá funcionando hasta el ${this.dateText(sub.cancel_at)}. ` +
         `Después el negocio pasará al ${this.freePlanName}: solo ventas y gastos; lo demás se bloquea, pero tus datos no se borran.` +
-        `${queued} Puedes reactivarlo antes de esa fecha.`,
+        `${refund} Puedes reactivarlo antes de esa fecha.`,
       'Cancelar plan',
       true
     );
@@ -325,6 +341,18 @@ export class BillingPage {
   }
 
   async resumePlan() {
+    const sub = this.sub;
+    if (!sub) return;
+    // Al reactivar regresa la fecha original y se descuentan los créditos que se devolvieron al cancelar
+    if (sub.cancel_refund > 0) {
+      const ok = await this.ui.confirm(
+        'Reactivar plan',
+        `Tu plan ${sub.plan_name} vuelve a durar hasta su fecha original y se descuentan los ${sub.cancel_refund} créditos ` +
+          `que se te devolvieron al cancelar.`,
+        'Reactivar'
+      );
+      if (!ok) return;
+    }
     try {
       const r = await this.billing.resumePlan();
       this.s = r.billing;
