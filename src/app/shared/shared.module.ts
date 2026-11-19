@@ -23,12 +23,13 @@ import { ApiImageDirective } from './api-image.directive';
 import { UserAvatarComponent } from './user-avatar.component';
 import { SearchSelectComponent } from './search-select.component';
 import { StreetMapComponent } from './street-map.component';
+import { NetworkButtonComponent } from './network-button.component';
 
 const IONIC = [IonButtons, IonContent, IonHeader, IonMenuButton, IonModal, IonRefresher, IonRefresherContent, IonTitle, IonToolbar];
 
 @NgModule({
-  declarations: [IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent],
+  declarations: [IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent, NetworkButtonComponent],
   imports: [CommonModule, FormsModule, RouterModule, ...IONIC],
-  exports: [CommonModule, FormsModule, RouterModule, ...IONIC, IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent],
+  exports: [CommonModule, FormsModule, RouterModule, ...IONIC, IconComponent, MoneyPipe, QtyPipe, DateMxPipe, InputFormComponent, PhotoPickerComponent, ApiImageDirective, UserAvatarComponent, SearchSelectComponent, StreetMapComponent, NetworkButtonComponent],
 })
 export class SharedModule {}

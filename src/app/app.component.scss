@@ -219,6 +219,9 @@ ion-split-pane {
   font-size: 13px;
   box-shadow: var(--shadow-lg);
   max-width: calc(100vw - 24px);
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
 
   app-icon {
     width: 16px;
@@ -368,4 +371,197 @@ ion-split-pane {
   from {
     opacity: 0;
   }
+}
+
+// ---------- Estado de conexión (sensor de red) ----------
+.net-panel {
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 18px;
+}
+
+.net-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  background: var(--success-soft);
+
+  h2 {
+    margin: 0 0 2px;
+  }
+
+  p {
+    font-size: 13.5px;
+  }
+
+  .net-big {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    background: var(--surface);
+    color: var(--success);
+
+    app-icon {
+      width: 28px;
+      height: 28px;
+    }
+  }
+
+  &.net-weak {
+    background: var(--warning-soft);
+
+    .net-big {
+      color: var(--warning);
+    }
+  }
+
+  &.net-offline {
+    background: var(--danger-soft);
+
+    .net-big {
+      color: var(--danger);
+    }
+  }
+}
+
+.net-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+
+  @media (max-width: 520px) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.net-cell,
+.net-test {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    font-size: 15px;
+  }
+}
+
+.net-label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.net-api {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.net-test {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+
+  .grow {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+}
+
+.net-vibe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 12px 0 4px;
+}
+
+.net-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+
+  input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--ink);
+  }
+}
+
+.net-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.net-log {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-height: 220px;
+  overflow: auto;
+
+  li {
+    display: flex;
+    gap: 10px;
+    padding: 8px 12px;
+    border-left: 3px solid var(--border-strong);
+    font-size: 13.5px;
+
+    & + li {
+      border-top: 1px solid var(--border);
+    }
+  }
+
+  .ev-time {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    padding-top: 1px;
+  }
+
+  .ev-text {
+    display: block;
+  }
+
+  .ev-online,
+  .ev-test-ok {
+    border-left-color: var(--success);
+  }
+
+  .ev-offline,
+  .ev-test-fail {
+    border-left-color: var(--danger);
+  }
+
+  .ev-change {
+    border-left-color: var(--warning);
+  }
+}
+
+.net-foot {
+  margin-top: 10px !important;
+  font-size: 12px !important;
+  color: var(--muted) !important;
 }

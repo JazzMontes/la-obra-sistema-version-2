@@ -54,9 +54,96 @@
   </ion-split-pane>
 
   <!-- Sin conexión -->
-  <div class="offline-bar" *ngIf="!online">
+  <button type="button" class="offline-bar" *ngIf="!online" (click)="net.open()">
     <app-icon name="wifiOff"></app-icon>
     Sin conexión. Lo que se pueda guardar sin red se sincronizará después.
+  </button>
+
+  <!-- Estado de conexión (sensor de red). Se abre con el ícono de wifi de cada encabezado. -->
+  <div class="dialog-backdrop" *ngIf="net.panelOpen" (click)="net.close()">
+    <div class="dialog dialog-wide net-panel" role="dialog" aria-modal="true" aria-label="Estado de conexión" (click)="$event.stopPropagation()">
+      <div class="net-head" [class]="'net-head net-' + net.quality">
+        <div class="net-big"><app-icon [name]="net.icon"></app-icon></div>
+        <div class="grow">
+          <h2>{{ net.title }}</h2>
+          <p>{{ net.subtitle }}</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-icon" (click)="net.close()" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+
+      <div class="net-grid">
+        <div class="net-cell">
+          <span class="net-label">Estado</span>
+          <strong [class.text-success]="net.online" [class.text-danger]="!net.online">{{ net.online ? 'En línea' : 'Sin conexión' }}</strong>
+          <span class="net-api">navigator.onLine</span>
+        </div>
+        <div class="net-cell">
+          <span class="net-label">Tipo de red</span>
+          <strong>{{ net.online ? (net.typeLabel || 'No informado') : 'Ninguna' }}</strong>
+          <span class="net-api">{{ net.source === 'capacitor' ? 'Network.connectionType' : 'connection.type' }}</span>
+        </div>
+        <div class="net-cell">
+          <span class="net-label">Calidad estimada</span>
+          <strong>{{ net.effectiveType ? net.effectiveType.toUpperCase() : 'No disponible' }}</strong>
+          <span class="net-api">connection.effectiveType</span>
+        </div>
+        <div class="net-cell">
+          <span class="net-label">Velocidad estimada</span>
+          <strong>{{ net.downlink !== null ? net.downlink + ' Mb/s' : 'No disponible' }}</strong>
+          <span class="net-api">connection.downlink</span>
+        </div>
+        <div class="net-cell">
+          <span class="net-label">Latencia estimada</span>
+          <strong>{{ net.rtt !== null ? net.rtt + ' ms' : 'No disponible' }}</strong>
+          <span class="net-api">connection.rtt</span>
+        </div>
+        <div class="net-cell">
+          <span class="net-label">Ahorro de datos</span>
+          <strong>{{ net.supports.connection ? (net.saveData ? 'Activado' : 'Desactivado') : 'No disponible' }}</strong>
+          <span class="net-api">connection.saveData</span>
+        </div>
+      </div>
+
+      <div class="net-test">
+        <div class="grow">
+          <span class="net-label">Respuesta del servidor (Supabase)</span>
+          <strong *ngIf="net.testing">Midiendo…</strong>
+          <strong *ngIf="!net.testing && net.lastTest" [class.text-success]="net.lastTest.ok" [class.text-danger]="!net.lastTest.ok">
+            {{ net.lastTest.ok ? net.lastTest.ms + ' ms' : 'Sin respuesta' }}
+          </strong>
+          <strong *ngIf="!net.testing && !net.lastTest">Sin medir</strong>
+          <span class="net-api" *ngIf="net.lastTest && !net.testing">{{ net.lastTest.detail }} · {{ net.lastTest.at | date: 'HH:mm:ss' }}</span>
+        </div>
+        <button type="button" class="btn btn-sm" (click)="net.test()" [disabled]="net.testing">
+          <app-icon name="refresh"></app-icon>Probar
+        </button>
+      </div>
+
+      <div class="net-vibe">
+        <label class="net-switch">
+          <input type="checkbox" [checked]="net.vibrateOnChange" (change)="net.setVibrate($any($event.target).checked)" />
+          <span>Vibrar cuando cambie la conexión</span>
+        </label>
+        <button type="button" class="btn btn-sm btn-ghost" (click)="net.testVibration()"><app-icon name="vibrate"></app-icon>Probar vibración</button>
+      </div>
+
+      <div class="net-log-head">
+        <span class="net-label">Historial de eventos</span>
+        <button type="button" class="link small" *ngIf="net.events.length" (click)="net.clearEvents()">Limpiar</button>
+      </div>
+      <ul class="net-log">
+        <li *ngFor="let e of net.events" [class]="'ev-' + e.kind">
+          <span class="ev-time">{{ e.at | date: 'HH:mm:ss' }}</span>
+          <span class="grow">
+            <span class="ev-text">{{ e.text }}</span>
+            <span class="net-api">{{ e.origin }}</span>
+          </span>
+        </li>
+        <li class="muted small" *ngIf="!net.events.length">Sin eventos. Prueba activar y quitar el modo avión.</li>
+      </ul>
+
+      <p class="net-foot">Datos leídos con: {{ net.sourceLabel }}.</p>
+    </div>
   </div>
 
   <!-- Avisos -->

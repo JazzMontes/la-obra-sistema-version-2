@@ -6,6 +6,7 @@
       <a class="btn btn-sm" routerLink="/pos"><app-icon name="pos"></app-icon><span class="desktop-only">Punto de venta</span></a>
       <button class="btn btn-sm" type="button" (click)="print()" [disabled]="loading"><app-icon name="receipt"></app-icon><span class="desktop-only">Imprimir</span></button>
     </ion-buttons>
+    <ion-buttons slot="end"><app-network-button></app-network-button></ion-buttons>
   </ion-toolbar>
 </ion-header>
 

@@ -9,6 +9,7 @@ import { Auth } from './services/auth';
 import { BILLING_EVENT, BillingService } from './services/billing';
 import { RenderService, autoRefresh } from './services/render';
 import { Memo } from './shared/memo';
+import { NetworkService } from './services/network';
 
 // feature: función del plan del negocio que necesita la pantalla; si no está vigente se muestra con candado
 interface NavItem { label: string; icon: string; url: string; admin?: boolean; feature?: string; locked?: boolean; }
@@ -79,11 +80,7 @@ export class AppComponent implements OnDestroy {
 
   user: any = null;
   url = '/';
-  online = navigator.onLine;
   showTech = false;
-
-  private onOnline = () => this.zone.run(() => (this.online = true));
-  private onOffline = () => this.zone.run(() => (this.online = false));
   // Cambió el nombre o la foto de perfil (pantalla Mi perfil)
   private onUserUpdated = () => {
     this.user = this.auth.getStoredUser();
@@ -104,7 +101,9 @@ export class AppComponent implements OnDestroy {
     private menu: MenuController,
     private zone: NgZone,
     private render: RenderService,
-    public billing: BillingService
+    public billing: BillingService,
+    // Sensor de red: ícono de conexión en los encabezados y panel "Estado de conexión"
+    public net: NetworkService
   ) {
     // Se crea aquí para que funcione en toda la app (ver services/render.ts)
     void render;
@@ -121,17 +120,18 @@ export class AppComponent implements OnDestroy {
         render.schedule();
       }
     });
-    window.addEventListener('online', this.onOnline);
-    window.addEventListener('offline', this.onOffline);
     window.addEventListener('la-obra-user-updated', this.onUserUpdated);
     window.addEventListener(BILLING_EVENT, this.onBillingUpdated);
   }
 
   ngOnDestroy() {
-    window.removeEventListener('online', this.onOnline);
-    window.removeEventListener('offline', this.onOffline);
     window.removeEventListener('la-obra-user-updated', this.onUserUpdated);
     window.removeEventListener(BILLING_EVENT, this.onBillingUpdated);
+  }
+
+  // Lo usa la barra "Sin conexión"
+  get online(): boolean {
+    return this.net.online;
   }
 
   get showMenu(): boolean {
