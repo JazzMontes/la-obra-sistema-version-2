@@ -12,7 +12,6 @@
 import { Injectable } from '@angular/core';
 import axios from 'axios';
 import { ApiService } from './api';
-import { CardForm, cardPayload } from './card';
 
 export interface BillingFeature {
   key: string;
@@ -169,15 +168,15 @@ export class BillingService {
   }
 
   // Llamadas que cambian el plan o los créditos (solo administradores)
-  // Solo se paga con tarjeta. Del formulario solo se envía marca, últimos 4, vencimiento y titular.
-  async subscribe(plan_code: string, cycle: 'monthly' | 'annual', card: CardForm) {
-    const r = await this.api.post('billing/subscribe.php', { plan_code, cycle, method: 'card_test', card: cardPayload(card) });
+  // Solo se paga con tarjeta (modo de prueba, sin pedir datos)
+  async subscribe(plan_code: string, cycle: 'monthly' | 'annual') {
+    const r = await this.api.post('billing/subscribe.php', { plan_code, cycle, method: 'card_test' });
     this.set(r.billing);
     return r;
   }
 
-  async buyCredits(package_id: number, card: CardForm) {
-    const r = await this.api.post('billing/buy-credits.php', { package_id, method: 'card_test', card: cardPayload(card) });
+  async buyCredits(package_id: number) {
+    const r = await this.api.post('billing/buy-credits.php', { package_id, method: 'card_test' });
     this.set(r.billing);
     return r;
   }

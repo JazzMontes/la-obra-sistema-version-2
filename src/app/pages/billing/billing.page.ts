@@ -11,7 +11,6 @@ import { errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { autoRefresh } from '../../services/render';
 import { formatMoney, parseServerDate } from '../../shared/format.pipes';
-import { CardErrors, CardForm, cardBrand, cvvLength, emptyCard, formatCardNumber, formatExp, validateCard } from '../../services/card';
 
 type Cycle = 'monthly' | 'annual';
 
@@ -45,10 +44,6 @@ export class BillingPage {
 
   // Pago (plan o paquete de créditos)
   checkout: Checkout | null = null;
-  // Pago con tarjeta (modo de prueba). El número completo y el CVV no se guardan ni se envían.
-  card: CardForm = emptyCard();
-  cardTouched = false;
-  blurred: Record<string, boolean> = {};
   paying = false;
 
   // Desbloqueo con créditos
@@ -214,81 +209,24 @@ export class BillingPage {
 
   private openCheckout(c: Checkout) {
     this.checkout = c;
-    this.card = emptyCard();
-    this.cardTouched = false;
-    this.blurred = {};
   }
 
   closeCheckout() {
     this.checkout = null;
-    // No se deja la tarjeta en memoria al cerrar
-    this.card = emptyCard();
-    this.cardTouched = false;
-    this.blurred = {};
-  }
-
-  // ---------- Formulario de tarjeta ----------
-  get brand() {
-    return cardBrand(this.card.number);
-  }
-
-  get cvvMax(): number {
-    return cvvLength(this.brand);
-  }
-
-  get cardErrors(): CardErrors {
-    return validateCard(this.card);
-  }
-
-  get cardValid(): boolean {
-    return Object.keys(this.cardErrors).length === 0;
-  }
-
-  // Error de un campo: se muestra al salir del campo o al intentar pagar
-  cardError(field: keyof CardErrors): string {
-    if (!this.cardTouched && !this.blurred[field]) return '';
-    return this.cardErrors[field] || '';
-  }
-
-  // Se da formato mientras se escribe (espacios en el número, diagonal en el vencimiento)
-  private inputValue(event: Event, format: (v: string) => string): string {
-    const el = event.target as HTMLInputElement;
-    const v = format(el.value);
-    if (el.value !== v) el.value = v;
-    return v;
-  }
-
-  onNumber(event: Event) {
-    this.card.number = this.inputValue(event, formatCardNumber);
-    if (this.card.cvv.length > this.cvvMax) this.card.cvv = this.card.cvv.slice(0, this.cvvMax);
-  }
-
-  onExp(event: Event) {
-    this.card.exp = this.inputValue(event, formatExp);
-  }
-
-  onCvv(event: Event) {
-    this.card.cvv = this.inputValue(event, v => String(v || '').replace(/\D/g, '').slice(0, this.cvvMax));
   }
 
   async pay() {
     const c = this.checkout;
     if (!c || this.paying) return;
-    this.cardTouched = true;
-    if (!this.cardValid) {
-      this.ui.error('Revisa los datos de la tarjeta');
-      return;
-    }
     this.paying = true;
     try {
       const r = c.kind === 'plan'
-        ? await this.billing.subscribe(c.plan!.code, this.cycle, this.card)
-        : await this.billing.buyCredits(c.packageId!, this.card);
+        ? await this.billing.subscribe(c.plan!.code, this.cycle)
+        : await this.billing.buyCredits(c.packageId!);
       this.s = r.billing;
       this.closeCheckout();
-      const card = r.result?.card ? ` con ${r.result.card}` : '';
-      if (r.result?.status === 'pending') this.ui.info(`Pago${card} registrado. Se activará cuando se confirme.`);
-      else this.ui.success(`${r.message}${card}` + (r.result?.note ? ` · ${r.result.note}` : ''));
+      if (r.result?.status === 'pending') this.ui.info('Pago registrado. Se activará cuando se confirme.');
+      else this.ui.success(r.message + (r.result?.note ? ` · ${r.result.note}` : ''));
       this.history = await this.billing.history().catch(() => this.history);
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudo procesar el pago'));
