@@ -28,6 +28,13 @@
       <button class="link" type="button" (click)="load()">Reintentar</button>
     </div>
 
+    <!-- Plan del negocio -->
+    <div class="notice" [class.danger]="n.danger" [class.warning]="!n.danger" *ngIf="planNotice as n">
+      <app-icon [name]="n.danger ? 'lock' : 'clock'"></app-icon>
+      <div class="grow">{{ n.text }}</div>
+      <a class="link" routerLink="/billing">{{ isAdmin ? 'Ver planes' : 'Ver plan' }}</a>
+    </div>
+
     <!-- Indicadores del día -->
     <div class="grid-4" *ngIf="summary as s">
       <div class="card kpi">

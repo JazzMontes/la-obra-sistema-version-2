@@ -200,6 +200,38 @@ begin
     'id', u.id, 'name', u.name, 'username', u.username, 'email', u.email, 'status', v_status, 'role', v_role)));
 end $$;
 
+-- users/delete.php (admin elimina una cuenta; si tiene historial, se desactiva para conservarlo)
+create or replace function la_obra_v2.ep_users__delete(m text, q jsonb, b jsonb, t text)
+returns jsonb language plpgsql as $$
+declare me la_obra_v2.users; u la_obra_v2.users; v_id int;
+begin
+  perform la_obra_v2.method(m, 'DELETE');
+  me := la_obra_v2.auth_long(t, true, 'No tienes permisos para eliminar usuarios');
+  v_id := la_obra_v2.positive_id(coalesce(la_obra_v2.body(b) -> 'id', q -> 'id'), 'El id del usuario no es válido');
+  select * into u from la_obra_v2.users where id = v_id for update;
+  if u.id is null then perform la_obra_v2.fail(404, 'Usuario no encontrado'); end if;
+  if u.id = me.id then perform la_obra_v2.fail(422, 'No puedes eliminar tu propia cuenta'); end if;
+  if u.role = 'admin' and u.status = 'active'
+     and not exists(select 1 from la_obra_v2.users where role = 'admin' and status = 'active' and id <> v_id) then
+    perform la_obra_v2.fail(422, 'El sistema debe conservar al menos un administrador activo');
+  end if;
+  begin
+    -- Las asistencias se borrarían junto con la cuenta: se tratan como historial a conservar.
+    if exists(select 1 from la_obra_v2.attendance where user_id = v_id) then
+      raise foreign_key_violation;
+    end if;
+    delete from la_obra_v2.users where id = v_id;
+    if u.avatar_path is not null then delete from la_obra_v2.files where path = u.avatar_path; end if;
+    return la_obra_v2.ok(200, 'Usuario eliminado', jsonb_build_object('deleted', true, 'deactivated', false));
+  exception when foreign_key_violation then
+    -- Tiene ventas, compras, asistencias u otros registros: se conserva el historial y se bloquea el acceso.
+    update la_obra_v2.users set status = 'inactive', updated_at = localtimestamp where id = v_id;
+    delete from la_obra_v2.sessions where user_id = v_id;
+    return la_obra_v2.ok(200, u.name || ' tiene movimientos registrados (ventas, compras, asistencias…). Para no perder ese historial, la cuenta se desactivó en lugar de borrarse.',
+      jsonb_build_object('deleted', false, 'deactivated', true));
+  end;
+end $$;
+
 -- users/employee-status.php
 create or replace function la_obra_v2.ep_users__employee_status(m text, q jsonb, b jsonb, t text)
 returns jsonb language plpgsql as $$

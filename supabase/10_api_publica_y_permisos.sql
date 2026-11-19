@@ -47,6 +47,14 @@ begin
     return jsonb_build_object('status', 404, 'body', jsonb_build_object('success', false, 'message', 'Ruta no encontrada: ' || p));
   end if;
 
+  -- Planes y créditos (13_planes_y_creditos.sql): si el negocio no tiene vigente la función
+  -- a la que pertenece esta ruta, se responde 402 sin ejecutarla.
+  perform set_config('la_obra_v2.in_api', 'on', true);
+  if to_regproc('la_obra_v2.billing_gate') is not null then
+    execute 'select la_obra_v2.billing_gate($1, $2)' into r using p, token;
+    if r is not null then return r; end if;
+  end if;
+
   begin
     execute format('select la_obra_v2.%I($1, $2, $3, $4)', fn)
       into r using upper(coalesce(method, 'GET')), coalesce(query, '{}'::jsonb), body, token;

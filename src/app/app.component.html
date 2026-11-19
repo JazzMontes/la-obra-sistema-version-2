@@ -19,13 +19,21 @@
               class="nav-item"
               *ngFor="let item of g.items"
               [class.active]="isActive(item.url)"
-              (click)="go(item.url)"
+              [class.locked]="item.locked"
+              [attr.title]="item.locked ? 'No incluido en el plan del negocio' : null"
+              (click)="go(item.url, item)"
             >
               <app-icon [name]="item.icon"></app-icon>
               <span>{{ item.label }}</span>
+              <app-icon class="nav-lock" name="lock" *ngIf="item.locked"></app-icon>
             </button>
           </div>
         </nav>
+
+        <button type="button" class="plan-chip" *ngIf="planLabel" [class.warn]="planWarning" (click)="go('/billing')">
+          <app-icon name="star"></app-icon>
+          <span>{{ planLabel }}</span>
+        </button>
 
         <div class="menu-user">
           <button type="button" class="user-chip" (click)="go('/profile')">

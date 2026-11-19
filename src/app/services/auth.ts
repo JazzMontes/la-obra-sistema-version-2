@@ -3,6 +3,7 @@
 import { Injectable } from '@angular/core';
 import axios from 'axios';
 import { ApiConfigService } from './api-config';
+import { BillingService } from './billing';
 
 @Injectable({
   providedIn: 'root',
@@ -10,7 +11,7 @@ import { ApiConfigService } from './api-config';
 export class Auth {
 
   // Dependencias e inicio
-  constructor(private apiConfig: ApiConfigService) {}
+  constructor(private apiConfig: ApiConfigService, private billing: BillingService) {}
 
   // Obtener dirección de la API
   private get apiUrl(): string {
@@ -37,6 +38,8 @@ export class Auth {
     if (data.success && data.token) {
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
+      // Plan y créditos del negocio: el menú y las pantallas los necesitan desde el inicio
+      await this.billing.refresh();
     }
 
     return data;
@@ -191,6 +194,7 @@ export class Auth {
     } finally {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      this.billing.clear();
     }
   }
 

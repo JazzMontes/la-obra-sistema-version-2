@@ -208,7 +208,7 @@ export class ProductSync {
   }
 
   // Enviar operaciones en orden, siempre la primera de la cola.
-  // - Falla de red o sesión vencida: se detiene y conserva todo para reintentar.
+  // - Falla de red, sesión vencida o plan vencido (402): se detiene y conserva todo para reintentar.
   // - Rechazo del servidor (422, 403, 409…): mueve la operación a "fallidas" y sigue.
   // - Un alta exitosa se convierte en "edición" con el id real antes de subir la foto,
   //   así un corte de red a la mitad nunca duplica el producto.
@@ -246,7 +246,8 @@ export class ProductSync {
           sent++;
         } catch (e: any) {
           const status = e?.response?.status;
-          if (this.isNetworkError(e) || status === 401 || !status) break;
+          // 402: el plan del negocio no tiene "Ventas y caja" vigente; se conserva para cuando se renueve
+          if (this.isNetworkError(e) || status === 401 || status === 402 || !status) break;
           const failed = this.getFailed();
           failed.push({
             ...item,

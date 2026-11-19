@@ -6,10 +6,12 @@ import { MenuController } from '@ionic/angular';
 import { ApiDiagnosticsService } from './services/api-diagnostics';
 import { UiService } from './services/ui';
 import { Auth } from './services/auth';
+import { BILLING_EVENT, BillingService } from './services/billing';
 import { RenderService, autoRefresh } from './services/render';
 import { Memo } from './shared/memo';
 
-interface NavItem { label: string; icon: string; url: string; admin?: boolean; }
+// feature: función del plan del negocio que necesita la pantalla; si no está vigente se muestra con candado
+interface NavItem { label: string; icon: string; url: string; admin?: boolean; feature?: string; locked?: boolean; }
 interface NavGroup { title: string; items: NavItem[]; }
 
 const NAV: NavGroup[] = [
@@ -18,42 +20,43 @@ const NAV: NavGroup[] = [
     // Operación del empleado: vender, entregar pedidos y cortar caja
     title: 'Ventas y caja',
     items: [
-      { label: 'Punto de venta', icon: 'pos', url: '/pos' },
-      { label: 'Pedidos', icon: 'orders', url: '/orders' },
-      { label: 'Corte de caja', icon: 'cash', url: '/cash-cut' },
+      { label: 'Punto de venta', icon: 'pos', url: '/pos', feature: 'ventas' },
+      { label: 'Pedidos', icon: 'orders', url: '/orders', feature: 'ventas' },
+      { label: 'Corte de caja', icon: 'cash', url: '/cash-cut', feature: 'ventas' },
     ],
   },
   {
     title: 'Operación',
     items: [
-      { label: 'Asistencia', icon: 'pin', url: '/attendance' },
-      { label: 'Gastos', icon: 'expenses', url: '/expenses' },
-      { label: 'Mermas', icon: 'waste', url: '/waste' },
-      { label: 'Inventario', icon: 'inventory', url: '/inventory' },
-      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true },
+      { label: 'Asistencia', icon: 'pin', url: '/attendance', feature: 'asistencia' },
+      { label: 'Gastos', icon: 'expenses', url: '/expenses', feature: 'gastos' },
+      { label: 'Mermas', icon: 'waste', url: '/waste', feature: 'inventario' },
+      { label: 'Inventario', icon: 'inventory', url: '/inventory', feature: 'inventario' },
+      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true, feature: 'inventario' },
     ],
   },
   {
     title: 'Menú y recetas',
     items: [
-      { label: 'Productos', icon: 'products', url: '/products', admin: true },
-      { label: 'Preparaciones', icon: 'preparations', url: '/preparations', admin: true },
-      { label: 'Insumos', icon: 'inputs', url: '/inputs', admin: true },
-      { label: 'Categorías', icon: 'categories', url: '/categories', admin: true },
+      { label: 'Productos', icon: 'products', url: '/products', admin: true, feature: 'ventas' },
+      { label: 'Preparaciones', icon: 'preparations', url: '/preparations', admin: true, feature: 'recetas' },
+      { label: 'Insumos', icon: 'inputs', url: '/inputs', admin: true, feature: 'inventario|recetas' },
+      { label: 'Categorías', icon: 'categories', url: '/categories', admin: true, feature: 'ventas' },
     ],
   },
   {
     title: 'Análisis',
     items: [
-      { label: 'Costos', icon: 'costs', url: '/costs', admin: true },
-      { label: 'Reportes', icon: 'reports', url: '/reports', admin: true },
+      { label: 'Costos', icon: 'costs', url: '/costs', admin: true, feature: 'recetas' },
+      { label: 'Reportes', icon: 'reports', url: '/reports', admin: true, feature: 'reportes' },
     ],
   },
   {
     title: 'Administración',
     items: [
+      { label: 'Plan y créditos', icon: 'star', url: '/billing' },
       { label: 'Usuarios', icon: 'users', url: '/users', admin: true },
-      { label: 'Métodos de pago', icon: 'card', url: '/payment-methods', admin: true },
+      { label: 'Métodos de pago', icon: 'card', url: '/payment-methods', admin: true, feature: 'ventas' },
       { label: 'Validar estudiante', icon: 'student', url: '/student-validation' },
       { label: 'Servidor', icon: 'server', url: '/data-origins' },
     ],
@@ -86,6 +89,12 @@ export class AppComponent implements OnDestroy {
     this.user = this.auth.getStoredUser();
     this.render.schedule();
   };
+  // Cambió el plan, los créditos o venció algo: se vuelven a calcular los candados del menú
+  private billingVersion = 0;
+  private onBillingUpdated = () => {
+    this.billingVersion++;
+    this.render.schedule();
+  };
 
   constructor(
     public diagnostics: ApiDiagnosticsService,
@@ -94,7 +103,8 @@ export class AppComponent implements OnDestroy {
     private router: Router,
     private menu: MenuController,
     private zone: NgZone,
-    private render: RenderService
+    private render: RenderService,
+    public billing: BillingService
   ) {
     // Se crea aquí para que funcione en toda la app (ver services/render.ts)
     void render;
@@ -102,6 +112,7 @@ export class AppComponent implements OnDestroy {
     // (El catálogo y los cambios pendientes de Productos se conservan y se sincronizan al volver a entrar.)
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    billing.clear();
     this.user = null;
     this.router.events.subscribe(e => {
       if (e instanceof NavigationEnd) {
@@ -113,12 +124,14 @@ export class AppComponent implements OnDestroy {
     window.addEventListener('online', this.onOnline);
     window.addEventListener('offline', this.onOffline);
     window.addEventListener('la-obra-user-updated', this.onUserUpdated);
+    window.addEventListener(BILLING_EVENT, this.onBillingUpdated);
   }
 
   ngOnDestroy() {
     window.removeEventListener('online', this.onOnline);
     window.removeEventListener('offline', this.onOffline);
     window.removeEventListener('la-obra-user-updated', this.onUserUpdated);
+    window.removeEventListener(BILLING_EVENT, this.onBillingUpdated);
   }
 
   get showMenu(): boolean {
@@ -130,9 +143,27 @@ export class AppComponent implements OnDestroy {
   }
 
   get groups(): NavGroup[] {
-    return this.memo.get('groups', [this.isAdmin], () =>
-      NAV.map(g => ({ ...g, items: g.items.filter(i => !i.admin || this.isAdmin) })).filter(g => g.items.length)
+    return this.memo.get('groups', [this.isAdmin, this.billingVersion], () =>
+      NAV.map(g => ({
+        ...g,
+        items: g.items
+          .filter(i => !i.admin || this.isAdmin)
+          .map(i => ({ ...i, locked: !!i.feature && !i.feature.split('|').some(k => this.billing.isActive(k)) })),
+      })).filter(g => g.items.length)
     );
+  }
+
+  // Resumen del plan del negocio para el pie del menú
+  get planLabel(): string {
+    const s = this.billing.status;
+    if (!s) return '';
+    const plan = s.subscription ? s.subscription.plan_name + (s.subscription.cycle === 'trial' ? ' (prueba)' : '') : 'Sin plan vigente';
+    return `${plan} · ${s.credits} créditos`;
+  }
+
+  get planWarning(): boolean {
+    const s = this.billing.status;
+    return !!s && (!s.subscription || s.subscription.days_left <= 5);
   }
 
   get initials(): string {
@@ -143,8 +174,13 @@ export class AppComponent implements OnDestroy {
     return this.url === url || this.url.startsWith(url + '/');
   }
 
-  async go(url: string) {
-    await this.router.navigateByUrl(url);
+  async go(url: string, item?: NavItem) {
+    // Una pantalla con candado lleva a Plan y créditos con esa función marcada
+    if (item?.locked && item.feature) {
+      await this.router.navigate(['/billing'], { queryParams: { feature: item.feature.split('|')[0] } });
+    } else {
+      await this.router.navigateByUrl(url);
+    }
     await this.menu.close();
   }
 
@@ -157,6 +193,7 @@ export class AppComponent implements OnDestroy {
       // Aunque el servidor no responda, la sesión local se borra.
     }
     this.user = null;
+    this.billing.clear();
     await this.menu.close();
     await this.router.navigateByUrl('/login', { replaceUrl: true });
   }

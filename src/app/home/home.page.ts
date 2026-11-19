@@ -2,6 +2,7 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { ApiService, errorMessage } from '../services/api';
 import { Auth } from '../services/auth';
+import { BillingService } from '../services/billing';
 import { autoRefresh } from '../services/render';
 
 @Component({
@@ -31,7 +32,24 @@ export class HomePage {
     { n: 8, title: 'Inventario y reportes', text: 'Existencias, mermas y resultados', url: '/inventory', icon: 'inventory' },
   ];
 
-  constructor(private api: ApiService, private auth: Auth) {}
+  constructor(private api: ApiService, private auth: Auth, private billing: BillingService) {}
+
+  // Aviso del plan del negocio: sin plan vigente o por vencer en 5 días o menos
+  get planNotice(): { danger: boolean; text: string } | null {
+    const s = this.billing.status;
+    if (!s) return null;
+    if (!s.subscription) {
+      return { danger: true, text: this.isAdmin
+        ? 'El negocio no tiene un plan vigente: las funciones están bloqueadas.'
+        : 'El plan del negocio terminó. Avisa al administrador.' };
+    }
+    const d = s.subscription.days_left;
+    if (d <= 5) {
+      const when = d === 0 ? 'hoy' : `en ${d} ${d === 1 ? 'día' : 'días'}`;
+      return { danger: false, text: `El plan ${s.subscription.plan_name} del negocio termina ${when}.` };
+    }
+    return null;
+  }
 
   get isAdmin(): boolean {
     return this.user?.role === 'admin';

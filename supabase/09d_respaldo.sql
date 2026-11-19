@@ -47,6 +47,8 @@ begin
   select count(*) into v_admins from jsonb_array_elements(coalesce(bk #> '{tables,users}', '[]')) x where x ->> 'role' = 'admin' and x ->> 'status' = 'active';
   if v_admins = 0 then perform la_obra_v2.fail(422, 'El respaldo no tiene ningún administrador activo; no se restauró para que no pierdas el acceso'); end if;
 
+  -- Al restaurar no se aplica el límite de usuarios del plan (se recupera lo que había)
+  perform set_config('la_obra_v2.skip_user_limit', 'on', true);
   execute 'truncate ' || (select string_agg(format('la_obra_v2.%I', x), ', ') from unnest(la_obra_v2.backup_tables()) x) || ' restart identity cascade';
   foreach tb in array la_obra_v2.backup_tables() loop
     if tb = 'sessions' or jsonb_typeof(bk -> 'tables' -> tb) is distinct from 'array' then continue; end if;

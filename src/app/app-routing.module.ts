@@ -3,12 +3,13 @@
 // reescritura) nunca da 404 al recargar una pantalla, y no hace falta --base-href ni 404.html.
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
-import { adminGuard, authGuard } from './services/guards';
+import { adminGuard, authGuard, featureGuard } from './services/guards';
 
-const page = (path: string, load: () => Promise<any>, admin = false) => ({
+// feature: función del plan que necesita la pantalla (ver supabase/13_planes_y_creditos.sql)
+const page = (path: string, load: () => Promise<any>, admin = false, feature?: string) => ({
   path,
   loadChildren: load,
-  canActivate: [admin ? adminGuard : authGuard],
+  canActivate: feature ? [admin ? adminGuard : authGuard, featureGuard(feature)] : [admin ? adminGuard : authGuard],
 });
 
 const routes: Routes = [
@@ -17,25 +18,26 @@ const routes: Routes = [
   { path: 'change-password', loadChildren: () => import('./pages/change-password/change-password.module').then(m => m.ChangePasswordPageModule) },
 
   page('home', () => import('./home/home.module').then(m => m.HomePageModule)),
-  page('pos', () => import('./pages/pos/pos.module').then(m => m.PosPageModule)),
-  page('orders', () => import('./pages/orders/orders.module').then(m => m.OrdersPageModule)),
-  page('cash-cut', () => import('./pages/cash-cut/cash-cut.module').then(m => m.CashCutPageModule)),
-  page('inventory', () => import('./pages/inventory/inventory.module').then(m => m.InventoryPageModule)),
-  page('waste', () => import('./pages/waste/waste.module').then(m => m.WastePageModule)),
-  page('expenses', () => import('./pages/expenses/expenses.module').then(m => m.ExpensesPageModule)),
-  page('attendance', () => import('./pages/attendance/attendance.module').then(m => m.AttendancePageModule)),
+  page('pos', () => import('./pages/pos/pos.module').then(m => m.PosPageModule), false, 'ventas'),
+  page('orders', () => import('./pages/orders/orders.module').then(m => m.OrdersPageModule), false, 'ventas'),
+  page('cash-cut', () => import('./pages/cash-cut/cash-cut.module').then(m => m.CashCutPageModule), false, 'ventas'),
+  page('inventory', () => import('./pages/inventory/inventory.module').then(m => m.InventoryPageModule), false, 'inventario'),
+  page('waste', () => import('./pages/waste/waste.module').then(m => m.WastePageModule), false, 'inventario'),
+  page('expenses', () => import('./pages/expenses/expenses.module').then(m => m.ExpensesPageModule), false, 'gastos'),
+  page('attendance', () => import('./pages/attendance/attendance.module').then(m => m.AttendancePageModule), false, 'asistencia'),
   page('profile', () => import('./pages/profile/profile.module').then(m => m.ProfilePageModule)),
+  page('billing', () => import('./pages/billing/billing.module').then(m => m.BillingPageModule)),
   page('student-validation', () => import('./pages/student-validation/student-validation.module').then(m => m.StudentValidationPageModule)),
 
-  page('purchases', () => import('./pages/purchases/purchases.module').then(m => m.PurchasesPageModule), true),
-  page('products', () => import('./pages/products/products.module').then(m => m.ProductsPageModule), true),
-  page('preparations', () => import('./pages/preparations/preparations.module').then(m => m.PreparationsPageModule), true),
-  page('inputs', () => import('./pages/inputs/inputs.module').then(m => m.InputsPageModule), true),
-  page('categories', () => import('./pages/categories/categories.module').then(m => m.CategoriesPageModule), true),
-  page('costs', () => import('./pages/costs/costs.module').then(m => m.CostsPageModule), true),
-  page('reports', () => import('./pages/reports/reports.module').then(m => m.ReportsPageModule), true),
+  page('purchases', () => import('./pages/purchases/purchases.module').then(m => m.PurchasesPageModule), true, 'inventario'),
+  page('products', () => import('./pages/products/products.module').then(m => m.ProductsPageModule), true, 'ventas'),
+  page('preparations', () => import('./pages/preparations/preparations.module').then(m => m.PreparationsPageModule), true, 'recetas'),
+  page('inputs', () => import('./pages/inputs/inputs.module').then(m => m.InputsPageModule), true, 'inventario|recetas'),
+  page('categories', () => import('./pages/categories/categories.module').then(m => m.CategoriesPageModule), true, 'ventas'),
+  page('costs', () => import('./pages/costs/costs.module').then(m => m.CostsPageModule), true, 'recetas'),
+  page('reports', () => import('./pages/reports/reports.module').then(m => m.ReportsPageModule), true, 'reportes'),
   page('users', () => import('./pages/users/users.module').then(m => m.UsersPageModule), true),
-  page('payment-methods', () => import('./pages/payment-methods/payment-methods.module').then(m => m.PaymentMethodsPageModule), true),
+  page('payment-methods', () => import('./pages/payment-methods/payment-methods.module').then(m => m.PaymentMethodsPageModule), true, 'ventas'),
 
   // Rutas anteriores
   { path: 'sales', redirectTo: 'pos', pathMatch: 'full' },

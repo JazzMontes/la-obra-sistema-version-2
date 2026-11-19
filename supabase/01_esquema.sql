@@ -288,10 +288,31 @@ create table if not exists la_obra_v2.files (
   created_at timestamp not null default localtimestamp
 );
 
+-- ---------- Reglas de "valor único" (por si la tabla ya existía de una versión anterior sin ellas) ----------
+-- "create table if not exists" no modifica tablas existentes; aquí se agregan si faltan.
+-- Si hubiera datos repetidos no se fuerza nada (no se borra ni cambia ningún dato): solo se avisa.
+do $$
+begin
+  begin
+    create unique index if not exists uq_payment_methods_name on la_obra_v2.payment_methods(name);
+  exception when others then raise notice 'payment_methods: hay nombres repetidos (%); se deja igual.', sqlerrm;
+  end;
+  begin
+    create unique index if not exists uq_users_username on la_obra_v2.users(username);
+  exception when others then raise notice 'users: hay usuarios repetidos (%); se deja igual.', sqlerrm;
+  end;
+  begin
+    create unique index if not exists uq_work_location_id on la_obra_v2.work_location(id);
+  exception when others then raise notice 'work_location: (%); se deja igual.', sqlerrm;
+  end;
+end $$;
+
 -- ---------- Datos iniciales ----------
-insert into la_obra_v2.payment_methods (name, status) values
-  ('Efectivo','active'), ('Transferencia','active'), ('Tarjeta','active')
-on conflict (name) do nothing;
+-- Solo agrega los métodos de pago que falten (no depende de reglas de valor único).
+insert into la_obra_v2.payment_methods (name, status)
+select v.name, 'active'
+from (values ('Efectivo'), ('Transferencia'), ('Tarjeta')) as v(name)
+where not exists (select 1 from la_obra_v2.payment_methods p where lower(p.name) = lower(v.name));
 
 -- ---------- Mejoras (noviembre 2026) ----------
 -- Solo AGREGAN columnas y tablas; no borran ni cambian lo que ya está guardado.

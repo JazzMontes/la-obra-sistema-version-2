@@ -1,0 +1,314 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Plan y créditos</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <ion-refresher slot="fixed" (ionRefresh)="load($event)">
+    <ion-refresher-content></ion-refresher-content>
+  </ion-refresher>
+
+  <div class="page">
+    <div class="page-intro">
+      <div>
+        <h1>Plan y créditos</h1>
+        <p>El plan y los créditos son del negocio{{ s?.business?.name ? ' (' + s?.business?.name + ')' : '' }}: todos sus usuarios usan lo que el negocio tiene contratado.</p>
+      </div>
+    </div>
+
+    <div class="notice danger" *ngIf="error">
+      <app-icon name="alert"></app-icon>
+      <div class="grow">{{ error }}</div>
+      <button class="link" type="button" (click)="load()">Reintentar</button>
+    </div>
+
+    <ng-container *ngIf="loading && !s">
+      <div class="card"><div class="skeleton" *ngFor="let i of [1, 2, 3, 4]"></div></div>
+    </ng-container>
+
+    <ng-container *ngIf="s">
+      <!-- Llegó aquí desde una pantalla bloqueada -->
+      <div class="notice warning" *ngIf="highlighted as h">
+        <app-icon name="lock"></app-icon>
+        <div class="grow">
+          <strong>{{ h.name }}</strong> no está incluida en el plan del negocio o su tiempo contratado terminó.
+          <span *ngIf="isAdmin">Mejora el plan o desbloquéala con créditos.</span>
+          <span *ngIf="!isAdmin">Pide al administrador que la active.</span>
+        </div>
+        <button class="btn btn-sm" type="button" *ngIf="canUnlock(h)" (click)="openUnlock(h)">Desbloquear</button>
+      </div>
+
+      <div class="notice danger" *ngIf="!sub">
+        <app-icon name="alert"></app-icon>
+        <div class="grow">
+          El negocio no tiene un plan vigente<span *ngIf="s.last_plan"> (el plan {{ lastPlanName }} terminó el {{ s.last_plan.ends_at | dateMx: 'datetime' }})</span>.
+          Las funciones están bloqueadas{{ isAdmin ? ': contrata un plan o desbloquea lo que necesites con créditos.' : '. Avisa al administrador.' }}
+        </div>
+      </div>
+
+      <div class="notice warning" *ngIf="sub && sub.days_left <= 5">
+        <app-icon name="clock"></app-icon>
+        <div class="grow">
+          El plan {{ sub.plan_name }} termina el {{ sub.paid_until | dateMx: 'datetime' }}
+          ({{ sub.days_left === 0 ? 'hoy' : 'en ' + sub.days_left + (sub.days_left === 1 ? ' día' : ' días') }}).
+          {{ isAdmin ? 'Renuévalo para no perder el acceso.' : '' }}
+        </div>
+      </div>
+
+      <div class="notice" *ngIf="isAdmin && s.pending_payments.length">
+        <app-icon name="info"></app-icon>
+        <div class="grow stack-tight">
+          <div *ngFor="let p of s.pending_payments" class="row-between wrap">
+            <span>Pago pendiente de confirmar: <strong>{{ p.description }}</strong> · {{ p.amount | money }} · {{ methodLabel(p.method) }}<span *ngIf="p.reference"> · {{ p.reference }}</span></span>
+            <button class="link small" type="button" (click)="cancelPayment(p)">Cancelar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen -->
+      <div class="grid-3">
+        <div class="card kpi">
+          <div class="kpi-label"><app-icon name="star"></app-icon>Plan del negocio</div>
+          <div class="kpi-value">{{ sub ? sub.plan_name : 'Sin plan' }}</div>
+          <div class="kpi-note" *ngIf="sub">
+            {{ cycleLabel(sub.cycle) }} · vigente hasta {{ sub.paid_until | dateMx }}
+          </div>
+          <div class="kpi-note" *ngIf="sub && s.queued.length">
+            Ya pagado después: {{ planName(s.queued[0].plan_code) }} desde {{ s.queued[0].starts_at | dateMx }}
+          </div>
+          <div class="kpi-note" *ngIf="!sub">Funciones bloqueadas</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label"><app-icon name="coins"></app-icon>Créditos del negocio</div>
+          <div class="kpi-value">{{ s.credits }}</div>
+          <div class="kpi-note">Desbloquean funciones por horas o días</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label"><app-icon name="users"></app-icon>Usuarios activos</div>
+          <div class="kpi-value">{{ s.users.active }}<span class="kpi-of" *ngIf="s.users.max !== null"> / {{ s.users.max }}</span></div>
+          <div class="meter" *ngIf="s.users.max !== null" [class.low]="usersPercent >= 100"><span [style.width.%]="usersPercent"></span></div>
+          <div class="kpi-note" *ngIf="s.users.max === null">Sin límite en tu plan</div>
+        </div>
+      </div>
+
+      <!-- Funciones -->
+      <div class="section-title"><h2>Funciones del negocio</h2></div>
+      <div class="card">
+        <div class="list">
+          <div class="list-row" *ngFor="let f of s.features" [class.hl]="f.key === highlight">
+            <div class="avatar avatar-sm" [class.ok]="f.active"><app-icon [name]="f.active ? 'check' : 'lock'"></app-icon></div>
+            <div class="grow">
+              <div class="title">{{ f.name }}</div>
+              <div class="sub">{{ f.description }}</div>
+              <div class="sub" *ngIf="!f.in_plan && (f.credits_per_hour || f.credits_per_day)">
+                Con créditos:
+                <span *ngIf="f.credits_per_hour">{{ f.credits_per_hour }} por hora</span>
+                <span *ngIf="f.credits_per_hour && f.credits_per_day"> · </span>
+                <span *ngIf="f.credits_per_day">{{ f.credits_per_day }} por día</span>
+              </div>
+            </div>
+            <span class="badge badge-success" *ngIf="f.in_plan">En tu plan</span>
+            <span class="badge badge-info" *ngIf="!f.in_plan && f.unlocked_until">Hasta {{ f.unlocked_until | dateMx: 'datetime' }}</span>
+            <span class="badge" *ngIf="!f.active">Bloqueada</span>
+            <button class="btn btn-sm" type="button" *ngIf="canUnlock(f)" (click)="openUnlock(f)">
+              {{ f.unlocked_until ? 'Agregar tiempo' : 'Desbloquear' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Planes -->
+      <div class="section-title row-between wrap">
+        <h2>Planes</h2>
+        <div class="segmented">
+          <button type="button" [class.active]="cycle === 'monthly'" (click)="cycle = 'monthly'">Mensual</button>
+          <button type="button" [class.active]="cycle === 'annual'" (click)="cycle = 'annual'">Anual</button>
+        </div>
+      </div>
+      <div class="plans">
+        <div class="card card-pad plan" *ngFor="let p of s.plans" [class.current]="isCurrent(p)" [ngClass]="'plan-' + p.code">
+          <div class="row-between">
+            <h3>{{ p.name }}</h3>
+            <span class="badge badge-brand" *ngIf="isCurrent(p)">Tu plan</span>
+          </div>
+          <p class="small muted">{{ p.description }}</p>
+          <div class="plan-price">
+            <span class="num">{{ price(p) | money }}</span>
+            <span class="muted small">/ {{ cycle === 'annual' ? 'año' : 'mes' }}</span>
+          </div>
+          <div class="small text-success" *ngIf="cycle === 'annual' && saving(p) > 0">Ahorras {{ saving(p) | money }} contra pagar mes a mes</div>
+          <div class="small muted" *ngIf="cycle === 'monthly'">o {{ p.annual_price | money }} al año</div>
+          <ul class="plan-features">
+            <li><app-icon name="users"></app-icon>{{ usersLabel(p.max_users) }}</li>
+            <li *ngFor="let f of s.features" [class.off]="!hasFeature(p, f.key)">
+              <app-icon [name]="hasFeature(p, f.key) ? 'check' : 'close'"></app-icon>{{ f.name }}
+            </li>
+          </ul>
+          <button class="btn btn-block" type="button" *ngIf="isAdmin"
+            [class.btn-primary]="!isCurrent(p)" (click)="choosePlan(p)">{{ planButton(p) }}</button>
+        </div>
+      </div>
+
+      <!-- Créditos -->
+      <div class="section-title"><h2>Comprar créditos</h2></div>
+      <p class="muted small">Los créditos son del negocio y no caducan. Úsalos para desbloquear una función que tu plan no incluye, solo por las horas o días que la necesites. Al terminar ese tiempo, se vuelve a bloquear sola.</p>
+      <div class="packages">
+        <button class="card card-pad package" type="button" *ngFor="let k of s.packages" [disabled]="!isAdmin" (click)="choosePackage(k)">
+          <div class="package-credits"><app-icon name="coins"></app-icon>{{ k.credits }}<span *ngIf="k.bonus" class="text-success"> +{{ k.bonus }}</span></div>
+          <div class="small muted">créditos{{ k.bonus ? ' (incluye bono)' : '' }}</div>
+          <div class="strong">{{ k.price | money }}</div>
+        </button>
+      </div>
+      <p class="small muted" *ngIf="!isAdmin">Solo un administrador del negocio puede contratar planes, comprar créditos o desbloquear funciones.</p>
+
+      <!-- Historial -->
+      <ng-container *ngIf="isAdmin && history">
+        <div class="section-title row-between wrap">
+          <h2>Historial</h2>
+          <div class="segmented">
+            <button type="button" [class.active]="historyTab === 'payments'" (click)="historyTab = 'payments'">Pagos</button>
+            <button type="button" [class.active]="historyTab === 'credits'" (click)="historyTab = 'credits'">Créditos</button>
+            <button type="button" [class.active]="historyTab === 'unlocks'" (click)="historyTab = 'unlocks'">Desbloqueos</button>
+            <button type="button" [class.active]="historyTab === 'subscriptions'" (click)="historyTab = 'subscriptions'">Planes</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="list" [ngSwitch]="historyTab">
+            <ng-container *ngSwitchCase="'payments'">
+              <div class="list-row" *ngFor="let p of history.payments">
+                <div class="grow">
+                  <div class="title">{{ p.description }}</div>
+                  <div class="sub">{{ p.created_at | dateMx: 'datetime' }} · {{ methodLabel(p.method) }}<span *ngIf="p.reference"> · {{ p.reference }}</span> · {{ p.created_by_name }}</div>
+                  <div class="sub" *ngIf="p.note">{{ p.note }}</div>
+                </div>
+                <span class="badge" [ngClass]="statusBadge(p.status)">{{ statusLabel(p.status) }}</span>
+                <div class="end strong num">{{ p.amount | money }}</div>
+              </div>
+              <div class="empty" *ngIf="!history.payments.length"><p>Aún no hay pagos.</p></div>
+            </ng-container>
+            <ng-container *ngSwitchCase="'credits'">
+              <div class="list-row" *ngFor="let c of history.credits">
+                <div class="grow">
+                  <div class="title">{{ c.description }}</div>
+                  <div class="sub">{{ c.created_at | dateMx: 'datetime' }} · {{ creditTypeLabel(c.type) }}<span *ngIf="c.created_by_name"> · {{ c.created_by_name }}</span> · saldo {{ c.balance_after }}</div>
+                </div>
+                <div class="end strong num" [class.text-success]="c.amount > 0" [class.text-danger]="c.amount < 0">{{ c.amount > 0 ? '+' : '' }}{{ c.amount }}</div>
+              </div>
+              <div class="empty" *ngIf="!history.credits.length"><p>Aún no hay movimientos de créditos.</p></div>
+            </ng-container>
+            <ng-container *ngSwitchCase="'unlocks'">
+              <div class="list-row" *ngFor="let u of history.unlocks">
+                <div class="grow">
+                  <div class="title">{{ u.feature_name }} · {{ u.quantity }} {{ u.unit === 'hour' ? (u.quantity === 1 ? 'hora' : 'horas') : (u.quantity === 1 ? 'día' : 'días') }}</div>
+                  <div class="sub">{{ u.starts_at | dateMx: 'datetime' }} → {{ u.ends_at | dateMx: 'datetime' }} · {{ u.credits_spent }} créditos · {{ u.created_by_name }}</div>
+                </div>
+                <span class="badge" [ngClass]="statusBadge(u.state)">{{ statusLabel(u.state) }}</span>
+              </div>
+              <div class="empty" *ngIf="!history.unlocks.length"><p>Aún no has desbloqueado funciones con créditos.</p></div>
+            </ng-container>
+            <ng-container *ngSwitchCase="'subscriptions'">
+              <div class="list-row" *ngFor="let x of history.subscriptions">
+                <div class="grow">
+                  <div class="title">{{ x.plan_name }} · {{ cycleLabel(x.cycle) }}</div>
+                  <div class="sub">{{ x.starts_at | dateMx }} → {{ x.ends_at | dateMx }}</div>
+                </div>
+                <span class="badge" [ngClass]="statusBadge(x.state)">{{ statusLabel(x.state) }}</span>
+                <div class="end strong num">{{ x.price | money }}</div>
+              </div>
+            </ng-container>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+  </div>
+</ion-content>
+
+<!-- Pago de un plan o de un paquete de créditos -->
+<ion-modal class="sheet sheet-small" [isOpen]="!!checkout" (didDismiss)="checkout = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="checkout as c">
+      <div class="modal-head">
+        <h2>{{ c.kind === 'plan' ? 'Contratar plan' : 'Comprar créditos' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="checkout = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="row-between">
+          <div>
+            <div class="strong">{{ c.title }}</div>
+            <div class="small muted" *ngIf="c.note">{{ c.note }}</div>
+          </div>
+          <div class="checkout-amount num">{{ c.amount | money }}</div>
+        </div>
+        <div class="field">
+          <label>Forma de pago</label>
+          <div class="segmented block">
+            <button type="button" *ngFor="let m of methods" [class.active]="method === m.key" (click)="method = m.key">{{ m.label }}</button>
+          </div>
+        </div>
+        <div class="field" *ngIf="method !== 'card_test' || s?.payment_mode === 'manual'">
+          <label for="b-ref">Referencia o folio {{ needsReference ? '' : '(opcional)' }}</label>
+          <input id="b-ref" class="input" [(ngModel)]="reference" maxlength="80" placeholder="Ej. SPEI 0123456" />
+          <div class="hint" *ngIf="s?.bank_info">{{ s?.bank_info }}</div>
+        </div>
+        <div class="notice" *ngIf="s?.payment_mode === 'simulated'">
+          <app-icon name="info"></app-icon>
+          <div>Modo de prueba: el pago se aprueba al momento y no se cobra dinero real.</div>
+        </div>
+        <div class="notice warning" *ngIf="s?.payment_mode === 'manual'">
+          <app-icon name="clock"></app-icon>
+          <div>El pago quedará pendiente y se activará cuando el proveedor confirme que lo recibió.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn" type="button" (click)="checkout = null">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="pay()" [disabled]="paying">
+          {{ paying ? 'Procesando…' : 'Pagar ' + money(c.amount) }}
+        </button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Desbloquear una función con créditos -->
+<ion-modal class="sheet sheet-small" [isOpen]="!!unlocking" (didDismiss)="unlocking = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="unlocking as f">
+      <div class="modal-head">
+        <h2>Desbloquear {{ f.name }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="unlocking = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <p class="small muted">{{ f.description }}. Todos los usuarios del negocio podrán usarla durante ese tiempo; después se bloquea sola.</p>
+        <div class="field">
+          <label>Por</label>
+          <div class="segmented block">
+            <button type="button" *ngIf="f.credits_per_hour" [class.active]="unit === 'hour'" (click)="setUnit('hour')">Horas · {{ f.credits_per_hour }} c/u</button>
+            <button type="button" *ngIf="f.credits_per_day" [class.active]="unit === 'day'" (click)="setUnit('day')">Días · {{ f.credits_per_day }} c/u</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="b-qty">¿Cuántas {{ unit === 'hour' ? 'horas' : 'días' }}?</label>
+          <input id="b-qty" class="input" type="number" inputmode="numeric" min="1" [max]="unlockMax" step="1" [(ngModel)]="qty" />
+          <div class="hint">De 1 a {{ unlockMax }}. Si ya está desbloqueada, el tiempo se suma al final.</div>
+        </div>
+        <div class="row-between">
+          <span>Costo</span><span class="strong num">{{ unlockCost }} créditos</span>
+        </div>
+        <div class="row-between small muted">
+          <span>Saldo después</span><span class="num">{{ (s?.credits ?? 0) - unlockCost }}</span>
+        </div>
+        <div class="form-error" *ngIf="unlockValid && !enoughCredits">No tienes créditos suficientes. Compra un paquete primero.</div>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn" type="button" (click)="unlocking = null">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="confirmUnlock()" [disabled]="spending || !unlockValid || !enoughCredits">
+          {{ spending ? 'Desbloqueando…' : 'Usar ' + unlockCost + ' créditos' }}
+        </button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
