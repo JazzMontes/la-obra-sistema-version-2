@@ -11,6 +11,7 @@ import { errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { autoRefresh } from '../../services/render';
 import { formatMoney, parseServerDate } from '../../shared/format.pipes';
+import { CardErrors, CardForm, cardBrand, cvvLength, emptyCard, formatCardNumber, formatExp, validateCard } from '../../services/card';
 
 type Cycle = 'monthly' | 'annual';
 
@@ -44,8 +45,10 @@ export class BillingPage {
 
   // Pago (plan o paquete de créditos)
   checkout: Checkout | null = null;
-  method = 'card_test';
-  reference = '';
+  // Pago con tarjeta (modo de prueba). El número completo y el CVV no se guardan ni se envían.
+  card: CardForm = emptyCard();
+  cardTouched = false;
+  blurred: Record<string, boolean> = {};
   paying = false;
 
   // Desbloqueo con créditos
@@ -57,12 +60,6 @@ export class BillingPage {
   // Historial (solo administradores)
   historyTab: 'payments' | 'credits' | 'unlocks' | 'subscriptions' = 'payments';
   history: any = null;
-
-  readonly methods = [
-    { key: 'card_test', label: 'Tarjeta' },
-    { key: 'transfer', label: 'Transferencia' },
-    { key: 'cash', label: 'Efectivo' },
-  ];
 
   constructor(private billing: BillingService, private auth: Auth, private ui: UiService, private route: ActivatedRoute) {}
 
@@ -213,34 +210,84 @@ export class BillingPage {
 
   private openCheckout(c: Checkout) {
     this.checkout = c;
-    this.method = 'card_test';
-    this.reference = '';
+    this.card = emptyCard();
+    this.cardTouched = false;
+    this.blurred = {};
   }
 
-  get needsReference(): boolean {
-    return this.s?.payment_mode === 'manual' && this.method === 'transfer';
+  closeCheckout() {
+    this.checkout = null;
+    // No se deja la tarjeta en memoria al cerrar
+    this.card = emptyCard();
+    this.cardTouched = false;
+    this.blurred = {};
+  }
+
+  // ---------- Formulario de tarjeta ----------
+  get brand() {
+    return cardBrand(this.card.number);
+  }
+
+  get cvvMax(): number {
+    return cvvLength(this.brand);
+  }
+
+  get cardErrors(): CardErrors {
+    return validateCard(this.card);
+  }
+
+  get cardValid(): boolean {
+    return Object.keys(this.cardErrors).length === 0;
+  }
+
+  // Error de un campo: se muestra al salir del campo o al intentar pagar
+  cardError(field: keyof CardErrors): string {
+    if (!this.cardTouched && !this.blurred[field]) return '';
+    return this.cardErrors[field] || '';
+  }
+
+  // Se da formato mientras se escribe (espacios en el número, diagonal en el vencimiento)
+  private inputValue(event: Event, format: (v: string) => string): string {
+    const el = event.target as HTMLInputElement;
+    const v = format(el.value);
+    if (el.value !== v) el.value = v;
+    return v;
+  }
+
+  onNumber(event: Event) {
+    this.card.number = this.inputValue(event, formatCardNumber);
+    if (this.card.cvv.length > this.cvvMax) this.card.cvv = this.card.cvv.slice(0, this.cvvMax);
+  }
+
+  onExp(event: Event) {
+    this.card.exp = this.inputValue(event, formatExp);
+  }
+
+  onCvv(event: Event) {
+    this.card.cvv = this.inputValue(event, v => String(v || '').replace(/\D/g, '').slice(0, this.cvvMax));
   }
 
   async pay() {
     const c = this.checkout;
     if (!c || this.paying) return;
-    if (this.needsReference && !this.reference.trim()) {
-      this.ui.error('Escribe la referencia o folio de la transferencia');
+    this.cardTouched = true;
+    if (!this.cardValid) {
+      this.ui.error('Revisa los datos de la tarjeta');
       return;
     }
     this.paying = true;
     try {
       const r = c.kind === 'plan'
-        ? await this.billing.subscribe(c.plan!.code, this.cycle, this.method, this.reference.trim())
-        : await this.billing.buyCredits(c.packageId!, this.method, this.reference.trim());
+        ? await this.billing.subscribe(c.plan!.code, this.cycle, this.card)
+        : await this.billing.buyCredits(c.packageId!, this.card);
       this.s = r.billing;
-      this.checkout = null;
-      const note = r.result?.note ? ` · ${r.result.note}` : '';
-      if (r.result?.status === 'pending') this.ui.info('Pago registrado. Se activará cuando se confirme.');
-      else this.ui.success(r.message + note);
+      this.closeCheckout();
+      const card = r.result?.card ? ` con ${r.result.card}` : '';
+      if (r.result?.status === 'pending') this.ui.info(`Pago${card} registrado. Se activará cuando se confirme.`);
+      else this.ui.success(`${r.message}${card}` + (r.result?.note ? ` · ${r.result.note}` : ''));
       this.history = await this.billing.history().catch(() => this.history);
     } catch (e) {
-      this.ui.error(errorMessage(e, 'No se pudo registrar el pago'));
+      this.ui.error(errorMessage(e, 'No se pudo procesar el pago'));
     } finally {
       this.paying = false;
     }

@@ -245,12 +245,12 @@
 </ion-content>
 
 <!-- Pago de un plan o de un paquete de créditos -->
-<ion-modal class="sheet sheet-small" [isOpen]="!!checkout" (didDismiss)="checkout = null">
+<ion-modal class="sheet sheet-small" [isOpen]="!!checkout" (didDismiss)="closeCheckout()">
   <ng-template>
     <div class="modal-shell" *ngIf="checkout as c">
       <div class="modal-head">
         <h2>{{ c.kind === 'plan' ? 'Contratar plan' : 'Comprar créditos' }}</h2>
-        <button class="btn btn-ghost btn-icon" type="button" (click)="checkout = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="closeCheckout()" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
       </div>
       <div class="modal-body stack">
         <div class="row-between">
@@ -260,20 +260,44 @@
           </div>
           <div class="checkout-amount num">{{ c.amount | money }}</div>
         </div>
-        <div class="field">
-          <label>Forma de pago</label>
-          <div class="segmented block">
-            <button type="button" *ngFor="let m of methods" [class.active]="method === m.key" (click)="method = m.key">{{ m.label }}</button>
+        <!-- Solo tarjeta. El número completo y el CVV no se envían ni se guardan. -->
+        <div class="card-form">
+          <div class="field">
+            <label for="cc-number">Número de tarjeta</label>
+            <div class="cc-number">
+              <input id="cc-number" class="input" type="text" inputmode="numeric" autocomplete="cc-number" maxlength="19"
+                placeholder="1234 5678 9012 3456" [value]="card.number" (input)="onNumber($event)" (blur)="blurred['number'] = true"
+                [class.invalid]="!!cardError('number')" />
+              <span class="cc-brand" *ngIf="brand">{{ brand }}</span>
+            </div>
+            <div class="form-error" *ngIf="cardError('number')">{{ cardError('number') }}</div>
           </div>
-        </div>
-        <div class="field" *ngIf="method !== 'card_test' || s?.payment_mode === 'manual'">
-          <label for="b-ref">Referencia o folio {{ needsReference ? '' : '(opcional)' }}</label>
-          <input id="b-ref" class="input" [(ngModel)]="reference" maxlength="80" placeholder="Ej. SPEI 0123456" />
-          <div class="hint" *ngIf="s?.bank_info">{{ s?.bank_info }}</div>
+          <div class="field">
+            <label for="cc-name">Nombre en la tarjeta</label>
+            <input id="cc-name" class="input" type="text" autocomplete="cc-name" maxlength="100" placeholder="Como aparece impreso"
+              [(ngModel)]="card.holder" (blur)="blurred['holder'] = true" [class.invalid]="!!cardError('holder')" />
+            <div class="form-error" *ngIf="cardError('holder')">{{ cardError('holder') }}</div>
+          </div>
+          <div class="grid-2 cc-row">
+            <div class="field">
+              <label for="cc-exp">Vencimiento</label>
+              <input id="cc-exp" class="input" type="text" inputmode="numeric" autocomplete="cc-exp" maxlength="5" placeholder="MM/AA"
+                [value]="card.exp" (input)="onExp($event)" (blur)="blurred['exp'] = true" [class.invalid]="!!cardError('exp')" />
+              <div class="form-error" *ngIf="cardError('exp')">{{ cardError('exp') }}</div>
+            </div>
+            <div class="field">
+              <label for="cc-cvv">CVV</label>
+              <input id="cc-cvv" class="input" type="password" inputmode="numeric" autocomplete="cc-csc" [attr.maxlength]="cvvMax"
+                [placeholder]="cvvMax === 4 ? '1234' : '123'" [value]="card.cvv" (input)="onCvv($event)" (blur)="blurred['cvv'] = true"
+                [class.invalid]="!!cardError('cvv')" />
+              <div class="form-error" *ngIf="cardError('cvv')">{{ cardError('cvv') }}</div>
+            </div>
+          </div>
+          <div class="hint">Se aceptan Visa, Mastercard y American Express.</div>
         </div>
         <div class="notice" *ngIf="s?.payment_mode === 'simulated'">
           <app-icon name="info"></app-icon>
-          <div>Modo de prueba: el pago se aprueba al momento y no se cobra dinero real.</div>
+          <div>Modo de prueba: no se cobra dinero real ni se guarda el número de la tarjeta. Usa <strong>4242 4242 4242 4242</strong> con cualquier fecha futura y CVV; la <strong>4000 0000 0000 0002</strong> simula una tarjeta rechazada.</div>
         </div>
         <div class="notice warning" *ngIf="s?.payment_mode === 'manual'">
           <app-icon name="clock"></app-icon>
@@ -282,7 +306,7 @@
       </div>
       <div class="modal-foot">
         <span class="grow"></span>
-        <button class="btn" type="button" (click)="checkout = null">Cancelar</button>
+        <button class="btn" type="button" (click)="closeCheckout()">Cancelar</button>
         <button class="btn btn-primary" type="button" (click)="pay()" [disabled]="paying">
           {{ paying ? 'Procesando…' : 'Pagar ' + money(c.amount) }}
         </button>

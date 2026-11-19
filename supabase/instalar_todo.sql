@@ -4708,32 +4708,69 @@ begin
 end $$;
 
 -- Registrar un pago y, en modo de prueba, aprobarlo y aplicarlo al momento
+-- Datos de la tarjeta (modo de prueba). La app valida el número completo (algoritmo de Luhn),
+-- el vencimiento y el CVV, y SOLO manda marca, últimos 4 dígitos, vencimiento y titular:
+-- el número completo y el CVV nunca llegan a la base de datos ni se guardan.
+-- Tarjeta de prueba que siempre se rechaza: termina en 0002 (ej. 4000 0000 0000 0002).
+create or replace function la_obra_v2.billing_card(c jsonb)
+returns jsonb language plpgsql as $$
+declare v_brand text; v_last4 text; v_m int; v_y int; v_holder text;
+begin
+  if c is null or jsonb_typeof(c) <> 'object' then perform la_obra_v2.fail(422, 'Captura los datos de la tarjeta'); end if;
+  v_brand := la_obra_v2.jstr(c -> 'brand');
+  v_last4 := la_obra_v2.jstr(c -> 'last4');
+  v_holder := left(la_obra_v2.jstr(c -> 'holder'), 100);
+  if v_brand not in ('Visa','Mastercard','American Express') then perform la_obra_v2.fail(422, 'Solo se aceptan tarjetas Visa, Mastercard o American Express'); end if;
+  if v_last4 !~ '^\d{4}$' then perform la_obra_v2.fail(422, 'El número de tarjeta no es válido'); end if;
+  if length(v_holder) < 3 then perform la_obra_v2.fail(422, 'Escribe el nombre como aparece en la tarjeta'); end if;
+  if not la_obra_v2.is_int(c -> 'exp_month') or not la_obra_v2.is_int(c -> 'exp_year') then
+    perform la_obra_v2.fail(422, 'La fecha de vencimiento no es válida');
+  end if;
+  v_m := la_obra_v2.jtext(c -> 'exp_month')::int;
+  v_y := la_obra_v2.jtext(c -> 'exp_year')::int;
+  if v_y < 100 then v_y := 2000 + v_y; end if;
+  if v_m not between 1 and 12 or v_y > extract(year from la_obra_v2.mx_now())::int + 20 then
+    perform la_obra_v2.fail(422, 'La fecha de vencimiento no es válida');
+  end if;
+  if make_date(v_y, v_m, 1) + interval '1 month' <= la_obra_v2.mx_now() then
+    perform la_obra_v2.fail(422, 'La tarjeta está vencida');
+  end if;
+  return jsonb_build_object('brand', v_brand, 'last4', v_last4, 'exp', lpad(v_m::text, 2, '0') || '/' || right(v_y::text, 2),
+                            'holder', v_holder);
+end $$;
+
+-- Registrar un pago con tarjeta y, en modo de prueba, aprobarlo y aplicarlo al momento.
+-- Solo se acepta tarjeta (ni transferencia ni efectivo).
 create or replace function la_obra_v2.billing_new_payment(u la_obra_v2.users, p_concept text, p_desc text, p_amount numeric,
   p_details jsonb, b jsonb)
 returns jsonb language plpgsql as $$
-declare st la_obra_v2.billing_settings; v_method text; v_ref text; v_id int; v_res jsonb; v_biz int := la_obra_v2.user_business(u);
+declare st la_obra_v2.billing_settings; v_card jsonb; v_ref text; v_id int; v_res jsonb; v_biz int := la_obra_v2.user_business(u);
 begin
   select * into st from la_obra_v2.billing_settings where id = 1;
-  v_method := coalesce(nullif(la_obra_v2.jstr(b -> 'method'), ''), 'card_test');
-  if v_method not in ('card_test','transfer','cash') then perform la_obra_v2.fail(422, 'Método de pago no válido'); end if;
-  v_ref := nullif(left(la_obra_v2.jstr(b -> 'reference'), 80), '');
-  if st.payment_mode = 'manual' and v_method = 'transfer' and v_ref is null then
-    perform la_obra_v2.fail(422, 'Escribe la referencia o folio de la transferencia');
+  if coalesce(nullif(la_obra_v2.jstr(b -> 'method'), ''), 'card_test') <> 'card_test' then
+    perform la_obra_v2.fail(422, 'Solo se acepta pago con tarjeta');
+  end if;
+  v_card := la_obra_v2.billing_card(b -> 'card');
+  v_ref := (v_card ->> 'brand') || ' •••• ' || (v_card ->> 'last4');
+  if v_card ->> 'last4' = '0002' then
+    perform la_obra_v2.fail(402, 'Tarjeta rechazada por el banco (tarjeta de prueba de rechazo). Usa otra tarjeta.',
+      jsonb_build_object('card_declined', true));
   end if;
   if exists (select 1 from la_obra_v2.billing_payments where business_id = v_biz and status = 'pending' and concept = p_concept) then
     perform la_obra_v2.fail(409, 'Ya hay un pago pendiente de confirmar para esto. Espera la confirmación o cancélalo.');
   end if;
   insert into la_obra_v2.billing_payments(business_id, concept, description, amount, method, reference, status, details,
     created_by, created_by_name, resolved_at)
-  values (v_biz, p_concept, p_desc, p_amount, v_method, v_ref,
-          case when st.payment_mode = 'simulated' then 'paid' else 'pending' end, p_details, u.id, u.name,
+  values (v_biz, p_concept, p_desc, p_amount, 'card_test', v_ref,
+          case when st.payment_mode = 'simulated' then 'paid' else 'pending' end,
+          p_details || jsonb_build_object('card', v_card), u.id, u.name,
           case when st.payment_mode = 'simulated' then la_obra_v2.mx_now() end)
   returning id into v_id;
   if st.payment_mode = 'simulated' then
     v_res := la_obra_v2.billing_apply_payment(v_id);
-    return jsonb_build_object('payment_id', v_id, 'status', 'paid', 'note', v_res ->> 'note');
+    return jsonb_build_object('payment_id', v_id, 'status', 'paid', 'card', v_ref, 'note', v_res ->> 'note');
   end if;
-  return jsonb_build_object('payment_id', v_id, 'status', 'pending',
+  return jsonb_build_object('payment_id', v_id, 'status', 'pending', 'card', v_ref,
     'note', 'Pago registrado. Se activará cuando el proveedor lo confirme.');
 end $$;
 
@@ -5038,7 +5075,7 @@ end $$;
 --   select la_obra_v2.proveedor_modo_pago('manual');          -- pagos pendientes hasta confirmarlos
 --   select * from la_obra_v2.billing_payments where status = 'pending';
 --   select la_obra_v2.proveedor_confirmar_pago(5);
---   select la_obra_v2.proveedor_rechazar_pago(6, 'No se recibió la transferencia');
+--   select la_obra_v2.proveedor_rechazar_pago(6, 'Pago no recibido');
 --   select la_obra_v2.proveedor_regalar_creditos(50, 'Compensación');
 --   select la_obra_v2.proveedor_asignar_plan('gold', 30);        -- 30 días de Gold sin cobro
 --   update la_obra_v2.plans set monthly_price = 349 where code = 'silver';   -- cambiar precios

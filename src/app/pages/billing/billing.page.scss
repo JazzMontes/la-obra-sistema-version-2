@@ -169,3 +169,42 @@
   margin-top: 6px;
   color: var(--danger);
 }
+
+// Formulario de tarjeta
+.card-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cc-number {
+  position: relative;
+
+  .input {
+    width: 100%;
+    padding-right: 120px;
+    letter-spacing: 0.04em;
+  }
+}
+
+.cc-brand {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-2);
+  background: var(--surface-3);
+  border-radius: 6px;
+  padding: 3px 7px;
+  pointer-events: none;
+}
+
+.cc-row {
+  gap: 12px;
+}
+
+.input.invalid {
+  border-color: var(--danger);
+}
