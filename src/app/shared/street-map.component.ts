@@ -1,7 +1,9 @@
 // Mapa de calles (como Google Maps) para la asistencia: muestra el negocio con su radio
 // permitido y, si hay lectura del GPS, tu ubicación con su margen de error.
-// Usa los mosaicos libres de CARTO (estilo Voyager, datos de OpenStreetMap; sin clave ni costo)
-// y se dibuja sin librerías. Se mueve arrastrando; se acerca con + / −, doble clic, rueda o pellizco.
+// Usa los mosaicos de calles de Esri (World Street Map: no piden clave ni cuenta) y, si no
+// responden, los de OpenStreetMap. Se dibuja sin librerías.
+// (Antes eran los de CARTO, que ahora muestran "API key required" sobre el mapa.)
+// Se mueve arrastrando; se acerca con + / −, doble clic, rueda o pellizco.
 import {
   AfterViewInit,
   ChangeDetectionStrategy,
@@ -107,7 +109,7 @@ function metersPerPixel(lat: number, z: number): number {
       <div class="offline" *ngIf="tilesFailed">Sin internet: el mapa no se pudo cargar</div>
       <div class="attrib">
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>
-        <ng-container *ngIf="!useOsm"> · <a href="https://carto.com/attributions" target="_blank" rel="noopener">© CARTO</a></ng-container>
+        <ng-container *ngIf="!useOsm"> · <a href="https://www.esri.com/" target="_blank" rel="noopener">© Esri</a></ng-container>
       </div>
     </div>
   `,
@@ -233,7 +235,7 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   scaleBar: { px: number; label: string } | null = null;
   tilesFailed = false;
   useOsm = false;
-  private cartoErrors = 0;
+  private primaryErrors = 0;
   private wheelAcc = 0;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinchStart = 0;
@@ -280,13 +282,11 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     return t.key;
   }
 
-  // Mosaicos "Voyager" de CARTO (estilo limpio, parecido a Google Maps) en alta resolución.
-  // Si CARTO no responde, se usan los de OpenStreetMap.
+  // Mosaicos "World Street Map" de Esri (calles con nombres, parecido a Google Maps; sin clave).
+  // Ojo: Esri usa el orden z/y/x. Si no responde, se usan los de OpenStreetMap.
   private tileUrl(z: number, x: number, y: number): string {
     if (this.useOsm) return `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
-    const sub = 'abcd'[(x + y) % 4];
-    const retina = typeof window !== 'undefined' && window.devicePixelRatio > 1 ? '@2x' : '';
-    return `https://${sub}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}${retina}.png`;
+    return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
   }
 
   tileError(e: Event, t: Tile) {
@@ -294,8 +294,8 @@ export class StreetMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.tilesFailed = true;
       return;
     }
-    this.cartoErrors++;
-    if (!this.useOsm && this.cartoErrors >= 3) {
+    this.primaryErrors++;
+    if (!this.useOsm && this.primaryErrors >= 3) {
       this.useOsm = true;
       this.update();
       this.render.schedule();

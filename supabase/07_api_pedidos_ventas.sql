@@ -6,7 +6,8 @@ set check_function_bodies = off;
 create or replace function la_obra_v2.order_items_json(p_order int)
 returns jsonb language sql stable as $$
   select coalesce(jsonb_agg(jsonb_build_object('product_id', oi.product_id, 'name', p.name, 'quantity', oi.quantity,
-    'unit_price', oi.unit_price::float8, 'subtotal', oi.subtotal::float8) order by oi.id), '[]')
+    'unit_price', oi.unit_price::float8, 'subtotal', oi.subtotal::float8,
+    'notes', coalesce(oi.notes, '[]'::jsonb)) order by oi.id), '[]')
   from la_obra_v2.order_items oi join la_obra_v2.products p on p.id = oi.product_id where oi.order_id = p_order;
 $$;
 
@@ -227,6 +228,8 @@ begin
     values (v_order, k::int, v_q, pr.price, v_sub, (la_obra_v2.product_cost(k::int, v_mode) ->> 'standard_cost')::numeric);
   end loop;
   v_total := round(v_total, 2);
+  -- Preferencias por pieza ("1 sin tomate"): ver 14_correo_notas_preferencias.sql
+  perform la_obra_v2.order_apply_notes(v_order, b -> 'items');
   update la_obra_v2.orders set total = v_total, order_status = 'confirmed', confirmed_at = localtimestamp where id = v_order;
   v_change := null;
   if v_payment is not null then

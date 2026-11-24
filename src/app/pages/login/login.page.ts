@@ -7,6 +7,7 @@ import { ApiConfigService } from '../../services/api-config';
 import { ApiDiagnosticsService } from '../../services/api-diagnostics';
 import { errorMessage } from '../../services/api';
 import { autoRefresh } from '../../services/render';
+import { UiService } from '../../services/ui';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -37,13 +38,20 @@ export class LoginPage {
     private auth: Auth,
     private config: ApiConfigService,
     private diagnostics: ApiDiagnosticsService,
-    private router: Router
+    private router: Router,
+    private ui: UiService
   ) {}
 
   // Usuarios que ya entraron en este dispositivo (solo el nombre de usuario, nunca la contraseña)
   recentUsers: string[] = [];
-  // El navegador permite leer contraseñas guardadas (Chrome, Edge, Chrome de Android)
-  readonly canUseSaved = typeof window !== 'undefined' && 'PasswordCredential' in window && !!navigator.credentials;
+
+  // Recuperar contraseña con un código que llega al correo
+  mode: 'login' | 'forgot' | 'reset' = 'login';
+  recoverLogin = '';
+  code = '';
+  newPassword = '';
+  newPassword2 = '';
+  notice = '';
 
   ionViewWillEnter() {
     this.serverHost = this.config.getHost();
@@ -51,35 +59,66 @@ export class LoginPage {
     if (!this.username && this.recentUsers.length) this.username = this.recentUsers[0];
   }
 
-  ionViewDidEnter() {
-    // Si el navegador tiene la contraseña guardada, se rellena sola (sin entrar automáticamente)
-    void this.useSaved(false);
+  // Después de entrar se recuerda el usuario en este dispositivo
+  private rememberLogin() {
+    saveRecentUser(this.username.trim());
   }
 
-  // Pide al administrador de contraseñas del navegador la cuenta guardada para este sitio
-  async useSaved(ask: boolean) {
-    if (!this.canUseSaved) return;
+  openForgot() {
+    this.error = '';
+    this.notice = '';
+    this.recoverLogin = this.username.trim();
+    this.mode = 'forgot';
+  }
+
+  backToLogin() {
+    this.error = '';
+    this.mode = 'login';
+  }
+
+  // Paso 1: el servidor manda un código de 6 dígitos al correo de la cuenta
+  async sendCode(again = false) {
+    if (this.loading) return;
+    this.error = '';
+    const login = this.recoverLogin.trim();
+    if (!login) {
+      this.error = 'Escribe tu usuario o tu correo';
+      return;
+    }
+    this.loading = true;
     try {
-      const cred: any = await navigator.credentials.get({ password: true, mediation: ask ? 'required' : 'optional' } as any);
-      if (cred && cred.type === 'password' && cred.id) {
-        this.username = cred.id;
-        this.password = cred.password ?? '';
-        this.refresher.schedule();
-      }
-    } catch {
-      // El usuario cerró el aviso o el navegador no lo permite: se escribe a mano
+      const r = await this.auth.forgotPassword(login);
+      this.notice = r.message || 'Te enviamos un código a tu correo.';
+      this.code = '';
+      this.mode = 'reset';
+      if (again) this.ui.success('Te enviamos un código nuevo');
+    } catch (e) {
+      this.error = errorMessage(e, 'No se pudo enviar el código');
+    } finally {
+      this.loading = false;
     }
   }
 
-  // Después de entrar: el navegador ofrece "¿Guardar contraseña?" y se recuerda el usuario
-  private async rememberLogin(user: any, password: string) {
-    saveRecentUser(this.username.trim());
-    if (!this.canUseSaved) return;
+  // Paso 2: con el código se elige la nueva contraseña
+  async resetPassword() {
+    if (this.loading) return;
+    this.error = '';
+    const code = this.code.replace(/\D/g, '');
+    if (code.length !== 6) return void (this.error = 'El código tiene 6 dígitos');
+    if (this.newPassword.length < 8) return void (this.error = 'La nueva contraseña debe tener al menos 8 caracteres');
+    if (this.newPassword !== this.newPassword2) return void (this.error = 'Las contraseñas no coinciden');
+    this.loading = true;
     try {
-      const PC = (window as any).PasswordCredential;
-      await navigator.credentials.store(new PC({ id: this.username.trim(), password, name: user?.name || this.username.trim() }));
-    } catch {
-      // Sin soporte o el usuario dijo que no
+      const r = await this.auth.resetPassword(this.recoverLogin.trim(), code, this.newPassword);
+      this.username = r.username || this.recoverLogin.trim();
+      this.password = '';
+      this.newPassword = this.newPassword2 = this.code = '';
+      this.notice = r.message || 'Tu contraseña se cambió. Ya puedes iniciar sesión.';
+      this.mode = 'login';
+    } catch (e) {
+      this.error = errorMessage(e, 'No se pudo cambiar la contraseña');
+    } finally {
+      this.loading = false;
     }
   }
 
@@ -107,7 +146,7 @@ export class LoginPage {
     this.error = '';
     this.showTech = false;
     if (!this.username.trim() || !this.password) {
-      this.error = 'Escribe tu usuario y contraseña';
+      this.error = 'Escribe tu usuario (o correo) y tu contraseña';
       return;
     }
     try {
@@ -120,7 +159,8 @@ export class LoginPage {
     try {
       const r = await this.auth.login(this.username, this.password);
       if (r.success) {
-        await this.rememberLogin(r.user, this.password);
+        this.rememberLogin();
+        this.notice = '';
         this.password = '';
         await this.router.navigateByUrl(r.user.must_change_password ? '/change-password' : '/home', { replaceUrl: true });
       } else {

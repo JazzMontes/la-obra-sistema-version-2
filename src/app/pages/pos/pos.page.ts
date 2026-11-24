@@ -9,7 +9,31 @@ import { CashFund, CashFundService } from '../../services/cash-fund';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
 
-interface CartLine { product: any; quantity: number; }
+// notes: preferencias por pieza, ej. [{ quantity: 1, note: 'sin tomate' }] (la suma nunca pasa de quantity)
+interface LineNote { quantity: number; note: string; }
+interface CartLine { product: any; quantity: number; notes: LineNote[]; }
+
+// Preferencias que se ofrecen con un toque; se suman las que el equipo escribe seguido
+const BASE_NOTES = ['Sin tomate', 'Sin cebolla', 'Sin chile', 'Sin mayonesa', 'Sin lechuga', 'Sin queso', 'Extra queso', 'Bien dorado'];
+const RECENT_KEY = 'la_obra_pos_recent';
+const NOTES_KEY = 'la_obra_pos_notes';
+
+function readList(key: string): any[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeList(key: string, list: any[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // Almacenamiento lleno o no disponible
+  }
+}
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -28,10 +52,17 @@ export class PosPage {
   methods: any[] = [];
   loading = true;
   query = '';
-  category: number | null = null;
+  // 'recent' = lo último que se vendió en este dispositivo
+  category: number | 'recent' | null = null;
+  recentIds: number[] = readList(RECENT_KEY).filter(x => Number.isInteger(x));
 
   cart: CartLine[] = [];
-  mode: 'local' | 'takeaway' = 'local';
+  // Ya no se elige "comer aquí / para llevar": todo se entrega en el local
+  // Preferencias: línea que se está editando
+  editing: CartLine | null = null;
+  noteText = '';
+  noteQty = 1;
+  private customNotes: string[] = readList(NOTES_KEY).filter(x => typeof x === 'string');
   customer = '';
   cartOpen = false;   // ticket en teléfono
 
@@ -128,10 +159,84 @@ export class PosPage {
   }
 
   get visible(): any[] {
-    return this.memo.get('visible', [this.products, this.query, this.category], () => {
+    return this.memo.get('visible', [this.products, this.query, this.category, this.recentIds], () => {
       const q = this.query.trim().toLowerCase();
+      if (this.category === 'recent') return this.recentProducts.filter(p => !q || p.name.toLowerCase().includes(q));
       return this.products.filter(p => (!this.category || p.category?.id === this.category) && (!q || p.name.toLowerCase().includes(q)));
     });
+  }
+
+  // Productos vendidos hace poco en este dispositivo (el más reciente primero)
+  get recentProducts(): any[] {
+    return this.memo.get('recent', [this.products, this.recentIds], () => {
+      const byId = new Map(this.products.map(p => [p.id, p]));
+      return this.recentIds.map(id => byId.get(id)).filter(Boolean).slice(0, 16);
+    });
+  }
+
+  private rememberRecent(ids: number[]) {
+    const list = [...new Set([...ids, ...this.recentIds])].slice(0, 24);
+    this.recentIds = list;
+    writeList(RECENT_KEY, list);
+  }
+
+  // ---------- Preferencias por pieza ----------
+
+  // Piezas de la línea que aún no tienen preferencia
+  free(l: CartLine): number {
+    return Math.max(0, l.quantity - l.notes.reduce((s, n) => s + n.quantity, 0));
+  }
+
+  get suggestions(): string[] {
+    return this.memo.get('suggestions', [this.customNotes], () => {
+      const seen = new Set<string>();
+      return [...this.customNotes, ...BASE_NOTES].filter(x => {
+        const k = x.toLowerCase();
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }).slice(0, 10);
+    });
+  }
+
+  openNote(l: CartLine) {
+    this.editing = l;
+    this.noteText = '';
+    this.noteQty = 1;
+  }
+
+  saveNote(l: CartLine) {
+    const text = this.noteText.trim().replace(/\s+/g, ' ').slice(0, 120);
+    if (!text) return;
+    const qty = Math.max(1, Math.min(this.noteQty, this.free(l)));
+    if (!qty || this.free(l) <= 0) return;
+    const same = l.notes.find(n => n.note.toLowerCase() === text.toLowerCase());
+    if (same) same.quantity += qty;
+    else l.notes.push({ quantity: qty, note: text });
+    if (!BASE_NOTES.some(b => b.toLowerCase() === text.toLowerCase())) {
+      this.customNotes = [text, ...this.customNotes.filter(x => x.toLowerCase() !== text.toLowerCase())].slice(0, 8);
+      writeList(NOTES_KEY, this.customNotes);
+    }
+    this.editing = null;
+  }
+
+  stepNote(l: CartLine, delta: number) {
+    this.noteQty = Math.max(1, Math.min(this.free(l), this.noteQty + delta));
+  }
+
+  removeNote(l: CartLine, i: number) {
+    l.notes.splice(i, 1);
+  }
+
+  // Si bajan las piezas, se quitan preferencias desde la última
+  private trimNotes(l: CartLine) {
+    let extra = l.notes.reduce((s, n) => s + n.quantity, 0) - l.quantity;
+    for (let i = l.notes.length - 1; i >= 0 && extra > 0; i--) {
+      const take = Math.min(extra, l.notes[i].quantity);
+      l.notes[i].quantity -= take;
+      extra -= take;
+      if (l.notes[i].quantity <= 0) l.notes.splice(i, 1);
+    }
   }
 
   imageUrl(p: any): string | null {
@@ -166,18 +271,23 @@ export class PosPage {
     }
     const line = this.cart.find(l => l.product.id === p.id);
     if (line) line.quantity++;
-    else this.cart.push({ product: p, quantity: 1 });
+    else this.cart.push({ product: p, quantity: 1, notes: [] });
   }
 
   change(line: CartLine, delta: number) {
     line.quantity = Math.max(0, line.quantity + delta);
-    if (line.quantity <= 0) this.cart = this.cart.filter(l => l !== line);
+    if (line.quantity <= 0) {
+      this.cart = this.cart.filter(l => l !== line);
+      if (this.editing === line) this.editing = null;
+    } else {
+      this.trimNotes(line);
+    }
   }
 
   clear() {
     this.cart = [];
     this.customer = '';
-    this.mode = 'local';
+    this.editing = null;
   }
 
   get count(): number {
@@ -243,13 +353,18 @@ export class PosPage {
     this.paying = true;
     try {
       const r = await this.api.post('orders/checkout.php', {
-        items: this.cart.map(l => ({ product_id: l.product.id, quantity: l.quantity })),
-        delivery_mode: this.mode,
+        items: this.cart.map(l => ({
+          product_id: l.product.id,
+          quantity: l.quantity,
+          notes: l.notes.map(n => ({ quantity: n.quantity, note: n.note })),
+        })),
+        delivery_mode: 'local',
         customer_name: this.customer.trim() || null,
         deliver_now: this.deliverNow,
         payment: this.payLater ? null : { payment_method_id: this.methodId, cash_received: this.isCash ? Number(this.cash) : null },
       });
       this.result = { ...r.order, items: this.count, customer: this.customer.trim() };
+      this.rememberRecent(this.cart.map(l => l.product.id));
       this.clear();
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudo registrar la venta'));

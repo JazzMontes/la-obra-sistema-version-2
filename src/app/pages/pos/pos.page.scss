@@ -504,3 +504,130 @@
     color: var(--text-2, var(--muted));
   }
 }
+
+// Categoría "Recientes"
+.cats .recent-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  app-icon {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+// Preferencias por pieza ("1 sin tomate")
+.tline-block {
+  border-bottom: 1px solid var(--border);
+
+  .tline {
+    border-bottom: 0;
+  }
+}
+
+.prefs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 6px;
+}
+
+.pref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: #7a4900;
+  font-size: 12.5px;
+  font-weight: 600;
+
+  button {
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    padding: 0;
+
+    app-icon {
+      width: 12px;
+      height: 12px;
+    }
+
+    &:hover {
+      background: rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+.pref-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 16px 10px;
+
+  app-icon {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.pref-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+
+.pref-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button {
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    cursor: pointer;
+
+    &.active {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+  }
+}
+
+.pref-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pref-qty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .stepper button {
+    width: 28px;
+    height: 28px;
+  }
+}

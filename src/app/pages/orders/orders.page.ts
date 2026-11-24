@@ -9,7 +9,7 @@ import { RenderService, autoRefresh } from '../../services/render';
 import { SearchOption } from '../../shared/search-select.component';
 
 // Línea del pedido mientras se edita
-interface EditLine { product_id: number; name: string; price: number; quantity: number; isNew: boolean; }
+interface EditLine { product_id: number; name: string; price: number; quantity: number; isNew: boolean; notes?: { quantity: number; note: string }[]; }
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -226,6 +226,7 @@ export class OrdersPage {
     this.editing = o;
     this.editLines = (o.items ?? []).map((i: any) => ({
       product_id: i.product_id, name: i.name, price: Number(i.unit_price), quantity: Number(i.quantity), isNew: false,
+      notes: Array.isArray(i.notes) ? i.notes : [],
     }));
     this.editMode = o.delivery_mode === 'takeaway' ? 'takeaway' : 'local';
     this.editCustomer = o.customer_name ?? '';
@@ -275,6 +276,16 @@ export class OrdersPage {
     if (l.quantity <= 0) {
       this.editLines = this.editLines.filter(x => x !== l);
       this.refreshAddOptions();
+    } else if (l.notes?.length) {
+      // Igual que el servidor: si bajan las piezas, se quitan preferencias desde la última
+      let extra = l.notes.reduce((t, n) => t + n.quantity, 0) - l.quantity;
+      const notes = l.notes.map(n => ({ ...n }));
+      for (let i = notes.length - 1; i >= 0 && extra > 0; i--) {
+        const take = Math.min(extra, notes[i].quantity);
+        notes[i].quantity -= take;
+        extra -= take;
+      }
+      l.notes = notes.filter(n => n.quantity > 0);
     }
   }
 

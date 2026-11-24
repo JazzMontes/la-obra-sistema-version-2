@@ -32,14 +32,19 @@
                 <span class="badge badge-brand edited-tag" *ngIf="o.edit_count" [title]="'Editado ' + (o.edited_at | dateMx: 'time')">Editado</span>
               </div>
               <div class="small muted">
-                <app-icon [name]="o.delivery_mode === 'takeaway' ? 'takeaway' : 'dine'"></app-icon>
-                {{ o.delivery_mode === 'takeaway' ? 'Para llevar' : 'Comer aquí' }} · {{ elapsed(o) }}
+                <app-icon name="clock"></app-icon>
+                {{ elapsed(o) }}
               </div>
             </div>
             <span class="badge" [class]="'badge ' + status(o).cls">{{ status(o).label }}</span>
           </div>
           <ul class="items">
-            <li *ngFor="let i of o.items"><strong>{{ i.quantity }}×</strong> {{ i.name }}</li>
+            <li *ngFor="let i of o.items">
+              <strong>{{ i.quantity }}×</strong> {{ i.name }}
+              <span class="item-notes" *ngIf="i.notes?.length">
+                <span class="item-note" *ngFor="let n of i.notes">{{ n.quantity }} {{ n.note }}</span>
+              </span>
+            </li>
           </ul>
           <div class="order-foot">
             <strong class="num">{{ o.total | money }}</strong>
@@ -155,6 +160,9 @@
           <div class="grow">
             <div class="title">{{ i.quantity }}× {{ i.name }}</div>
             <div class="sub">{{ i.unit_price | money }} c/u</div>
+            <div class="item-notes" *ngIf="i.notes?.length">
+              <span class="item-note" *ngFor="let n of i.notes">{{ n.quantity }} {{ n.note }}</span>
+            </div>
           </div>
           <div class="end num strong">{{ i.subtotal | money }}</div>
         </div>
@@ -231,10 +239,6 @@
         <button class="btn btn-ghost btn-icon" type="button" (click)="editing = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
       </div>
       <div class="modal-body stack">
-        <div class="segmented block">
-          <button type="button" [class.active]="editMode === 'local'" (click)="editMode = 'local'"><app-icon name="dine"></app-icon>Comer aquí</button>
-          <button type="button" [class.active]="editMode === 'takeaway'" (click)="editMode = 'takeaway'"><app-icon name="takeaway"></app-icon>Para llevar</button>
-        </div>
         <input class="input" [(ngModel)]="editCustomer" placeholder="Nombre del cliente (opcional)" maxlength="80" />
 
         <div class="edit-lines">
@@ -242,6 +246,9 @@
             <div class="grow">
               <div class="ename">{{ l.name }} <span class="badge badge-info" *ngIf="l.isNew">Nuevo</span></div>
               <div class="small muted num">{{ l.price | money }} c/u</div>
+              <div class="item-notes" *ngIf="l.notes?.length">
+                <span class="item-note" *ngFor="let n of l.notes">{{ n.quantity }} {{ n.note }}</span>
+              </div>
             </div>
             <div class="stepper">
               <button type="button" (click)="changeEditQty(l, -1)" [attr.aria-label]="l.quantity === 1 ? 'Quitar' : 'Menos'">

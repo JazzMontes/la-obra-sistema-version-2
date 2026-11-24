@@ -13,10 +13,6 @@
         <h1>Costos por producto</h1>
         <p>Se calculan solos: cantidades de cada receta × precio de la última compra de cada insumo. Compáralos con el precio de venta.</p>
       </div>
-      <div class="segmented">
-        <button type="button" [class.active]="mode === 'local'" (click)="setMode('local')">Comer aquí</button>
-        <button type="button" [class.active]="mode === 'takeaway'" (click)="setMode('takeaway')">Para llevar</button>
-      </div>
     </div>
 
     <div class="grid-3" *ngIf="summary">
@@ -121,7 +117,7 @@
           <div>Sin precio de compra: {{ d.missing_prices.join(', ') }}.</div>
         </div>
 
-        <div class="section-title"><h2>Composición ({{ mode === 'local' ? 'comer aquí' : 'para llevar' }})</h2></div>
+        <div class="section-title"><h2>Composición</h2></div>
         <div class="card" *ngIf="d.components.length; else noRecipe">
           <div class="list-row" *ngFor="let c of d.components">
             <div class="grow">

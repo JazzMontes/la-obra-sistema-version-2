@@ -25,6 +25,7 @@
             >
               <app-icon [name]="item.icon"></app-icon>
               <span>{{ item.label }}</span>
+              <span class="nav-badge" *ngIf="item.url === '/notes' && reminders.mine" [attr.aria-label]="reminders.mine + ' pendientes para ti'">{{ reminders.mine }}</span>
               <app-icon class="nav-lock" name="lock" *ngIf="item.locked"></app-icon>
             </button>
           </div>

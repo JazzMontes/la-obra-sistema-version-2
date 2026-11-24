@@ -45,6 +45,25 @@ export class Auth {
     return data;
   }
 
+  // Recuperar contraseña · paso 1: manda un código de 6 dígitos al correo de la cuenta
+  async forgotPassword(login: string) {
+    const response = await axios.post(`${this.apiUrl}/auth/forgot-password.php`, { login: login.trim() }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000,
+    });
+    return response.data;
+  }
+
+  // Recuperar contraseña · paso 2: con el código se guarda la nueva contraseña
+  async resetPassword(login: string, code: string, newPassword: string) {
+    const response = await axios.post(`${this.apiUrl}/auth/reset-password.php`, {
+      login: login.trim(),
+      code: code.trim(),
+      new_password: newPassword,
+    }, { headers: { 'Content-Type': 'application/json' } });
+    return response.data;
+  }
+
   // Registrar usuario
   async register(
     name: string,

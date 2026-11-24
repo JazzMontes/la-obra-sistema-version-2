@@ -128,6 +128,8 @@ create table if not exists la_obra_v2.order_items (
   standard_unit_cost numeric(12,4) null,
   constraint uq_order_product unique (order_id, product_id)
 );
+-- Preferencias por pieza: [{"quantity": 1, "note": "sin tomate"}] (14_correo_notas_preferencias.sql)
+alter table la_obra_v2.order_items add column if not exists notes jsonb null;
 
 create table if not exists la_obra_v2.payment_methods (
   id     serial primary key,

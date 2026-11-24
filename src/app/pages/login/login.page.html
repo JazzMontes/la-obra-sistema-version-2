@@ -7,14 +7,13 @@
       </div>
       <div class="hero-copy">
         <h2>Compras, inventario, costos y ventas en un mismo lugar.</h2>
-        <p>Lo que compras alimenta el inventario y el costo de tus recetas. Lo que vendes se descuenta solo.</p>
       </div>
       <div class="hero-foot">Sistema de punto de venta y costos</div>
     </aside>
 
     <main class="panel">
-      <!-- autocomplete + name: el navegador (o Google en Android) ofrece guardar la contraseña y la rellena la próxima vez -->
-      <form class="form" (ngSubmit)="login()" autocomplete="on">
+      <!-- Iniciar sesión. autocomplete + name: el navegador ofrece guardar la contraseña y la rellena la próxima vez -->
+      <form class="form" *ngIf="mode === 'login'" (ngSubmit)="login()" autocomplete="on">
         <div class="mobile-brand">
           <div class="mark">LO</div>
           <span>La Obra</span>
@@ -22,13 +21,18 @@
         <h1>Iniciar sesión</h1>
         <p class="muted">Usa la cuenta que te dio el administrador.</p>
 
+        <div class="notice success" *ngIf="notice"><app-icon name="check"></app-icon><div>{{ notice }}</div></div>
+
         <div class="field">
-          <label for="lg-user">Usuario</label>
+          <label for="lg-user">Usuario o correo</label>
           <input id="lg-user" name="username" class="input" type="text" [(ngModel)]="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" list="lg-recent" />
           <datalist id="lg-recent"><option *ngFor="let u of recentUsers" [value]="u"></option></datalist>
         </div>
         <div class="field">
-          <label for="lg-pass">Contraseña</label>
+          <div class="label-row">
+            <label for="lg-pass">Contraseña</label>
+            <button type="button" class="link small" (click)="openForgot()">¿Olvidaste tu contraseña?</button>
+          </div>
           <div class="input-group">
             <input id="lg-pass" name="password" class="input" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="password" autocomplete="current-password" />
             <button type="button" class="addon eye" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
@@ -44,8 +48,63 @@
         </div>
 
         <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Entrando…' : 'Entrar' }}</button>
-        <button type="button" class="link small saved-link" *ngIf="canUseSaved" (click)="useSaved(true)">Usar una contraseña guardada en este dispositivo</button>
+      </form>
 
+      <!-- Recuperar contraseña · paso 1: pedir el código -->
+      <form class="form" *ngIf="mode === 'forgot'" (ngSubmit)="sendCode()" autocomplete="off">
+        <div class="mobile-brand">
+          <div class="mark">LO</div>
+          <span>La Obra</span>
+        </div>
+        <h1>Recuperar contraseña</h1>
+        <p class="muted">Escribe tu usuario o tu correo. Te mandaremos un código de 6 dígitos al correo de tu cuenta.</p>
+
+        <div class="field">
+          <label for="fg-login">Usuario o correo</label>
+          <input id="fg-login" name="login" class="input" type="text" [(ngModel)]="recoverLogin" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        </div>
+
+        <div class="form-error" *ngIf="error">{{ error }}</div>
+
+        <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Enviando…' : 'Enviar código' }}</button>
+        <button type="button" class="link small center-link" (click)="backToLogin()">Volver a iniciar sesión</button>
+      </form>
+
+      <!-- Recuperar contraseña · paso 2: código y nueva contraseña -->
+      <form class="form" *ngIf="mode === 'reset'" (ngSubmit)="resetPassword()" autocomplete="off">
+        <div class="mobile-brand">
+          <div class="mark">LO</div>
+          <span>La Obra</span>
+        </div>
+        <h1>Escribe el código</h1>
+        <div class="notice info"><app-icon name="info"></app-icon><div>{{ notice || 'Revisa tu correo (también la carpeta de spam).' }}</div></div>
+
+        <div class="field">
+          <label for="rs-code">Código de 6 dígitos</label>
+          <input id="rs-code" name="code" class="input code-input" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" [(ngModel)]="code" />
+        </div>
+        <div class="field">
+          <label for="rs-pass">Nueva contraseña</label>
+          <div class="input-group">
+            <input id="rs-pass" name="new-password" class="input" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="newPassword" autocomplete="new-password" />
+            <button type="button" class="addon eye" (click)="showPassword = !showPassword" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              <app-icon name="eye"></app-icon>
+            </button>
+          </div>
+          <span class="small muted">Al menos 8 caracteres.</span>
+        </div>
+        <div class="field">
+          <label for="rs-pass2">Repite la nueva contraseña</label>
+          <input id="rs-pass2" name="new-password-2" class="input" [type]="showPassword ? 'text' : 'password'" [(ngModel)]="newPassword2" autocomplete="new-password" />
+        </div>
+
+        <div class="form-error" *ngIf="error">{{ error }}</div>
+
+        <button class="btn btn-primary btn-lg btn-block" type="submit" [disabled]="loading">{{ loading ? 'Guardando…' : 'Cambiar contraseña' }}</button>
+        <div class="row-between links-row">
+          <button type="button" class="link small" (click)="sendCode(true)" [disabled]="loading">Mandar otro código</button>
+          <button type="button" class="link small" (click)="backToLogin()">Volver</button>
+        </div>
       </form>
     </main>
   </div>

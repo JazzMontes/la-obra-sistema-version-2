@@ -37,6 +37,9 @@
             <option value="admin">Administrador</option>
             <option value="employee">Empleado</option>
           </select>
+          <button class="btn btn-sm" type="button" *ngIf="u.id !== me && u.status === 'active'" (click)="resend(u)" [disabled]="busy === u.id" title="Genera una contraseña temporal nueva y se la manda por correo">
+            <app-icon name="mail"></app-icon>{{ busy === u.id ? 'Enviando…' : 'Reenviar acceso' }}
+          </button>
           <button class="btn btn-sm" type="button" (click)="toggle(u)" [disabled]="u.id === me">{{ u.status === 'active' ? 'Desactivar' : 'Activar' }}</button>
           <button class="btn btn-sm btn-danger" type="button" (click)="remove(u)" *ngIf="u.id !== me" aria-label="Eliminar usuario">Eliminar</button>
         </div>
@@ -53,7 +56,7 @@
   <ng-template>
     <div class="modal-shell">
       <div class="modal-head">
-        <h2>{{ created ? 'Cuenta creada' : 'Nuevo usuario' }}</h2>
+        <h2>{{ created ? (created.resent ? 'Acceso reenviado' : 'Cuenta creada') : 'Nuevo usuario' }}</h2>
         <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
       </div>
 
@@ -72,6 +75,11 @@
             <input id="u-mail" class="input" type="email" [(ngModel)]="form.email" maxlength="150" />
           </div>
           <div class="field">
+            <label for="u-pass">Contraseña <span class="muted">(opcional)</span></label>
+            <input id="u-pass" class="input" type="text" [(ngModel)]="form.password" autocomplete="off" maxlength="72" placeholder="Vacía = se genera una" />
+            <span class="small muted">Se le manda por correo junto con su usuario. Al entrar por primera vez la cambia por una suya.</span>
+          </div>
+          <div class="field">
             <label>Rol</label>
             <div class="segmented block">
               <button type="button" [class.active]="form.role === 'employee'" (click)="form.role = 'employee'">Empleado</button>
@@ -88,10 +96,15 @@
 
       <ng-container *ngIf="created as c">
         <div class="modal-body stack">
-          <div class="notice success"><app-icon name="check"></app-icon><div>Comparte estos datos con {{ c.name }}. Al entrar se le pedirá crear su propia contraseña.</div></div>
+          <div class="notice success" *ngIf="c.email_sent"><app-icon name="mail"></app-icon><div>Le enviamos a <strong>{{ c.email }}</strong> su usuario, correo y contraseña. Al entrar se le pedirá crear su propia contraseña.</div></div>
+          <div class="notice warning" *ngIf="!c.email_sent"><app-icon name="alert"></app-icon><div>No se pudo enviar el correo{{ c.email_error ? ' (' + c.email_error + ')' : '' }}. Comparte tú estos datos con {{ c.name }}.</div></div>
           <div class="cred">
             <span class="small muted">Usuario</span>
             <strong>{{ c.username }}</strong>
+          </div>
+          <div class="cred">
+            <span class="small muted">Correo</span>
+            <strong>{{ c.email }}</strong>
           </div>
           <div class="cred">
             <span class="small muted">Contraseña temporal</span>
@@ -100,9 +113,10 @@
               <button class="btn btn-sm" type="button" (click)="copy(c.temporary_password)">Copiar</button>
             </div>
           </div>
-          <p class="small muted">Esta contraseña no se volverá a mostrar.</p>
+          <p class="small muted">Esta contraseña no se volverá a mostrar. Si la pierde, usa "Reenviar acceso" o "¿Olvidaste tu contraseña?" en el inicio de sesión.</p>
         </div>
         <div class="modal-foot">
+          <button class="btn" type="button" (click)="copy(accessText(c))">Copiar todo</button>
           <button class="btn btn-primary" type="button" (click)="open = false">Listo</button>
         </div>
       </ng-container>

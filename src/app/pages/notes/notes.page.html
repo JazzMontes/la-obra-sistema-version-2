@@ -1,0 +1,171 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Notas</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nueva</button>
+    </ion-buttons>
+    <ion-buttons slot="end"><app-network-button></app-network-button></ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Notas y pendientes</h1>
+        <p>Qué hay que comprar o hacer y quién se encarga. A la hora del recordatorio le llega un aviso a esa persona (o a todo el equipo).</p>
+      </div>
+      <div class="segmented">
+        <button type="button" [class.active]="status === 'pending'" (click)="setStatus('pending')">Pendientes {{ counts.pending || '' }}</button>
+        <button type="button" [class.active]="status === 'done'" (click)="setStatus('done')">Hechas</button>
+      </div>
+    </div>
+
+    <!-- Permiso de notificaciones de este dispositivo -->
+    <div class="notice notify" *ngIf="reminders.permission !== 'granted'">
+      <app-icon name="bell"></app-icon>
+      <div class="grow">
+        <ng-container *ngIf="reminders.permission === 'default'">Activa las notificaciones para que este dispositivo te avise de tus recordatorios.</ng-container>
+        <ng-container *ngIf="reminders.permission === 'denied'">Las notificaciones están bloqueadas en este dispositivo. Actívalas en los ajustes del navegador o del teléfono; mientras, los avisos salen dentro de la app.</ng-container>
+        <ng-container *ngIf="reminders.permission === 'unsupported'">Este navegador no permite notificaciones: los recordatorios se avisan dentro de la app mientras esté abierta.</ng-container>
+      </div>
+      <button class="btn btn-sm" type="button" *ngIf="reminders.permission === 'default'" (click)="reminders.enableNotifications()">Activar</button>
+    </div>
+
+    <!-- Agregar rápido -->
+    <div class="card quick" *ngIf="status === 'pending'">
+      <div class="quick-row">
+        <input class="input grow" [(ngModel)]="draft.title" placeholder="¿Qué hay que comprar o hacer? Ej. pedir el pan" maxlength="200" (keyup.enter)="quickAdd()" aria-label="Nueva nota" />
+        <button class="btn btn-primary" type="button" (click)="quickAdd()" [disabled]="saving || !draft.title.trim()">Agregar</button>
+      </div>
+      <ng-container *ngTemplateOutlet="fieldsTpl; context: { $implicit: draft, prefix: 'q' }"></ng-container>
+    </div>
+
+    <ng-container *ngIf="loading">
+      <div class="card"><div class="skeleton" *ngFor="let i of [1, 2, 3]"></div></div>
+    </ng-container>
+
+    <!-- Pendientes por persona -->
+    <ng-container *ngIf="!loading && status === 'pending'">
+      <div class="filter" *ngIf="notes.length">
+        <button type="button" [class.active]="!onlyMine" (click)="onlyMine = false">De todos</button>
+        <button type="button" [class.active]="onlyMine" (click)="onlyMine = true">Míos</button>
+      </div>
+      <section class="group" *ngFor="let g of groups">
+        <div class="group-head">
+          <app-icon [name]="g.id === null ? 'users' : 'user'"></app-icon>
+          <h2>{{ g.name }}</h2>
+          <span class="count">{{ g.notes.length }}</span>
+        </div>
+        <div class="card">
+          <div class="note" *ngFor="let n of g.notes" [class.overdue]="n.overdue">
+            <button class="tick" type="button" (click)="toggle(n)" [disabled]="busy.has(n.id)" [attr.aria-label]="'Marcar como hecha: ' + n.title"><app-icon name="check"></app-icon></button>
+            <div class="grow">
+              <div class="note-title">{{ n.title }}</div>
+              <div class="note-details" *ngIf="n.details">{{ n.details }}</div>
+              <div class="note-meta">
+                <span class="chip" *ngIf="n.remind_at" [class.late]="n.overdue"><app-icon name="clock"></app-icon>{{ n.overdue ? 'Ya es hora · ' : '' }}{{ when(n.remind_at) }}</span>
+                <span class="chip" *ngIf="n.repeat !== 'none'"><app-icon name="repeat"></app-icon>{{ n.repeat === 'daily' ? 'Cada día' : 'Cada semana' }}</span>
+                <span class="meta-text" *ngIf="n.done_at && n.repeat !== 'none'">Última vez: {{ n.done_by_name }}, {{ when(n.done_at) }}</span>
+                <span class="meta-text" *ngIf="n.created_by_name">Anotó {{ n.created_by === me ? 'tú' : n.created_by_name }}</span>
+              </div>
+            </div>
+            <button class="btn btn-ghost btn-icon btn-sm" type="button" *ngIf="canEdit(n)" (click)="openEdit(n)" aria-label="Editar"><app-icon name="edit"></app-icon></button>
+          </div>
+        </div>
+      </section>
+      <div class="card" *ngIf="!groups.length">
+        <div class="empty">
+          <app-icon name="notes"></app-icon>
+          <h3>{{ onlyMine && notes.length ? 'No tienes pendientes' : 'Sin pendientes' }}</h3>
+          <p>Anota lo que hay que comprar o hacer, a quién le toca y a qué hora recordarlo.</p>
+        </div>
+      </div>
+    </ng-container>
+
+    <!-- Hechas -->
+    <div class="card" *ngIf="!loading && status === 'done'">
+      <div class="note done" *ngFor="let n of notes">
+        <button class="tick on" type="button" (click)="toggle(n)" [disabled]="busy.has(n.id)" [attr.aria-label]="'Regresar a pendientes: ' + n.title"><app-icon name="check"></app-icon></button>
+        <div class="grow">
+          <div class="note-title">{{ n.title }}</div>
+          <div class="note-meta">
+            <span class="meta-text">Hecha por {{ n.done_by_name || '—' }} · {{ when(n.done_at) }}</span>
+            <span class="meta-text" *ngIf="n.assigned_name">Le tocaba a {{ n.assigned_name }}</span>
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-icon btn-sm" type="button" *ngIf="canDelete(n)" (click)="remove(n)" aria-label="Borrar"><app-icon name="trash"></app-icon></button>
+      </div>
+      <div class="empty" *ngIf="!notes.length">
+        <app-icon name="check"></app-icon>
+        <p>Aquí aparecerá lo que ya se compró o se hizo.</p>
+      </div>
+    </div>
+  </div>
+</ion-content>
+
+<!-- Campos que comparten "agregar rápido" y la ventana de edición -->
+<ng-template #fieldsTpl let-f let-prefix="prefix">
+  <div class="fields">
+    <div class="field">
+      <label [attr.for]="prefix + '-who'">¿Quién?</label>
+      <select class="select" [id]="prefix + '-who'" [(ngModel)]="f.assigned_to">
+        <option [ngValue]="null">Cualquiera del equipo</option>
+        <option *ngFor="let p of people" [ngValue]="p.id">{{ p.name }}{{ p.id === me ? ' (yo)' : '' }}</option>
+      </select>
+    </div>
+    <div class="field">
+      <label [attr.for]="prefix + '-when'">Recordar</label>
+      <select class="select" [id]="prefix + '-when'" [ngModel]="f.preset" (ngModelChange)="setPreset(f, $event)">
+        <option value="">Sin recordatorio</option>
+        <option value="1h">En 1 hora</option>
+        <option value="today18" *ngIf="showToday18">Hoy a las 6:00 p. m.</option>
+        <option value="tomorrow8">Mañana a las 8:00 a. m.</option>
+        <option value="custom">Elegir fecha y hora…</option>
+      </select>
+    </div>
+    <div class="field" *ngIf="f.preset === 'custom'">
+      <label [attr.for]="prefix + '-at'">Fecha y hora</label>
+      <input class="input" type="datetime-local" [id]="prefix + '-at'" [(ngModel)]="f.remind_at" />
+    </div>
+    <div class="field" *ngIf="f.preset">
+      <label [attr.for]="prefix + '-rep'">Repetir</label>
+      <select class="select" [id]="prefix + '-rep'" [(ngModel)]="f.repeat">
+        <option value="none">No se repite</option>
+        <option value="daily">Cada día</option>
+        <option value="weekly">Cada semana</option>
+      </select>
+    </div>
+  </div>
+</ng-template>
+
+<!-- Nueva / editar -->
+<ion-modal class="sheet sheet-small" [isOpen]="open" (didDismiss)="open = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ form.id ? 'Editar nota' : 'Nueva nota' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="field">
+          <label for="n-title">¿Qué hay que comprar o hacer?</label>
+          <input id="n-title" class="input" [(ngModel)]="form.title" maxlength="200" placeholder="Ej. pedir el pan para mañana" />
+        </div>
+        <div class="field">
+          <label for="n-details">Detalles <span class="muted">(opcional)</span></label>
+          <textarea id="n-details" class="textarea" rows="3" [(ngModel)]="form.details" maxlength="1000" placeholder="Cantidades, marca, proveedor…"></textarea>
+        </div>
+        <ng-container *ngTemplateOutlet="fieldsTpl; context: { $implicit: form, prefix: 'n' }"></ng-container>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger" type="button" *ngIf="form.id && canDelete(form)" (click)="remove(form)">Borrar</button>
+        <span class="grow"></span>
+        <button class="btn" type="button" (click)="open = false">Cancelar</button>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>

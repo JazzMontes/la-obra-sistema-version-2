@@ -189,9 +189,27 @@ pre {
   padding: 0 14px 14px;
 }
 
-// Contraseña guardada en el navegador
-.saved-link {
+// Recuperar contraseña
+.label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.center-link {
   display: block;
   margin: 12px auto 0;
+  text-align: center;
+}
+
+.links-row {
+  margin-top: 12px;
+}
+
+.code-input {
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.3em;
   text-align: center;
 }

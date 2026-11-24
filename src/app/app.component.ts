@@ -10,6 +10,7 @@ import { BILLING_EVENT, BillingService } from './services/billing';
 import { RenderService, autoRefresh } from './services/render';
 import { Memo } from './shared/memo';
 import { NetworkService } from './services/network';
+import { RemindersService } from './services/reminders';
 
 // feature: función del plan del negocio que necesita la pantalla; si no está vigente se muestra con candado
 interface NavItem { label: string; icon: string; url: string; admin?: boolean; feature?: string; locked?: boolean; }
@@ -29,6 +30,7 @@ const NAV: NavGroup[] = [
   {
     title: 'Operación',
     items: [
+      { label: 'Notas y pendientes', icon: 'notes', url: '/notes' },
       { label: 'Asistencia', icon: 'pin', url: '/attendance', feature: 'asistencia' },
       { label: 'Gastos', icon: 'expenses', url: '/expenses', feature: 'gastos' },
       { label: 'Mermas', icon: 'waste', url: '/waste', feature: 'inventario' },
@@ -103,7 +105,9 @@ export class AppComponent implements OnDestroy {
     private render: RenderService,
     public billing: BillingService,
     // Sensor de red: ícono de conexión en los encabezados y panel "Estado de conexión"
-    public net: NetworkService
+    public net: NetworkService,
+    // Recordatorios de Notas (avisos y número en el menú)
+    public reminders: RemindersService
   ) {
     // Se crea aquí para que funcione en toda la app (ver services/render.ts)
     void render;
@@ -117,6 +121,8 @@ export class AppComponent implements OnDestroy {
       if (e instanceof NavigationEnd) {
         this.url = e.urlAfterRedirects.split('?')[0];
         this.user = this.auth.getStoredUser();
+        if (this.user && !NO_MENU.includes(this.url)) this.reminders.start();
+        else if (!this.user) void this.reminders.stop();
         render.schedule();
       }
     });
@@ -196,6 +202,7 @@ export class AppComponent implements OnDestroy {
     }
     this.user = null;
     this.billing.clear();
+    await this.reminders.stop(true);
     await this.menu.close();
     await this.router.navigateByUrl('/login', { replaceUrl: true });
   }

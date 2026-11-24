@@ -22,6 +22,7 @@
         </div>
         <div class="cats">
           <button type="button" [class.active]="!category" (click)="category = null">Todo</button>
+          <button type="button" class="recent-cat" *ngIf="recentProducts.length" [class.active]="category === 'recent'" (click)="category = 'recent'"><app-icon name="history"></app-icon>Recientes</button>
           <button type="button" *ngFor="let c of categories" [class.active]="category === c.id" (click)="category = c.id">{{ c.name }}</button>
         </div>
       </div>
@@ -59,7 +60,7 @@
       <div class="empty" *ngIf="!loading && !visible.length">
         <app-icon name="products"></app-icon>
         <h3>Sin productos</h3>
-        <p>{{ query ? 'Prueba con otro nombre.' : 'Registra productos activos para venderlos aquí.' }}</p>
+        <p>{{ query ? 'Prueba con otro nombre.' : category === 'recent' ? 'Aquí aparecerá lo último que vendas en este dispositivo.' : 'Registra productos activos para venderlos aquí.' }}</p>
       </div>
     </section>
 
@@ -83,24 +84,55 @@
     <button class="link small" type="button" (click)="clear()" *ngIf="cart.length">Vaciar</button>
   </div>
   <div class="ticket-opts">
-    <div class="segmented block">
-      <button type="button" [class.active]="mode === 'local'" (click)="mode = 'local'"><app-icon name="dine"></app-icon>Comer aquí</button>
-      <button type="button" [class.active]="mode === 'takeaway'" (click)="mode = 'takeaway'"><app-icon name="takeaway"></app-icon>Para llevar</button>
-    </div>
     <input class="input" [(ngModel)]="customer" placeholder="Nombre del cliente (opcional)" maxlength="80" />
   </div>
   <div class="ticket-lines">
-    <div class="tline" *ngFor="let l of cart">
-      <div class="grow">
-        <div class="tname">{{ l.product.name }}</div>
-        <div class="small muted num">{{ l.product.price | money }} c/u</div>
+    <div class="tline-block" *ngFor="let l of cart">
+      <div class="tline">
+        <div class="grow">
+          <div class="tname">{{ l.product.name }}</div>
+          <div class="small muted num">{{ l.product.price | money }} c/u</div>
+        </div>
+        <div class="stepper">
+          <button type="button" (click)="change(l, -1)" aria-label="Menos"><app-icon name="minus"></app-icon></button>
+          <span class="num">{{ l.quantity }}</span>
+          <button type="button" (click)="change(l, 1)" aria-label="Más"><app-icon name="plus"></app-icon></button>
+        </div>
+        <div class="tsub num">{{ l.quantity * l.product.price | money }}</div>
       </div>
-      <div class="stepper">
-        <button type="button" (click)="change(l, -1)" aria-label="Menos"><app-icon name="minus"></app-icon></button>
-        <span class="num">{{ l.quantity }}</span>
-        <button type="button" (click)="change(l, 1)" aria-label="Más"><app-icon name="plus"></app-icon></button>
+
+      <!-- Preferencias por pieza: "1 sin tomate" -->
+      <div class="prefs" *ngIf="l.notes.length">
+        <span class="pref-chip" *ngFor="let n of l.notes; let i = index">
+          <strong>{{ n.quantity }}</strong> {{ n.note }}
+          <button type="button" (click)="removeNote(l, i)" [attr.aria-label]="'Quitar ' + n.note">
+            <app-icon name="close"></app-icon>
+          </button>
+        </span>
       </div>
-      <div class="tsub num">{{ l.quantity * l.product.price | money }}</div>
+      <button type="button" class="link small pref-add" *ngIf="editing !== l && free(l) > 0" (click)="openNote(l)">
+        <app-icon name="note"></app-icon>{{ l.notes.length ? 'Otra preferencia' : 'Agregar preferencia (sin…, extra…)' }}
+      </button>
+      <div class="pref-editor" *ngIf="editing === l">
+        <div class="pref-quick">
+          <button type="button" *ngFor="let sug of suggestions" [class.active]="noteText.toLowerCase() === sug.toLowerCase()" (click)="noteText = sug">{{ sug }}</button>
+        </div>
+        <input class="input" [(ngModel)]="noteText" placeholder="Escribe la preferencia, ej. sin tomate" maxlength="120" (keyup.enter)="saveNote(l)" />
+        <div class="pref-actions">
+          <div class="pref-qty" *ngIf="free(l) > 1">
+            <span class="small muted">¿Para cuántas?</span>
+            <div class="stepper">
+              <button type="button" (click)="stepNote(l, -1)" aria-label="Menos"><app-icon name="minus"></app-icon></button>
+              <span class="num">{{ noteQty }}</span>
+              <button type="button" (click)="stepNote(l, 1)" aria-label="Más"><app-icon name="plus"></app-icon></button>
+            </div>
+            <span class="small muted">de {{ free(l) }}</span>
+          </div>
+          <span class="grow"></span>
+          <button class="btn btn-sm btn-ghost" type="button" (click)="editing = null">Cancelar</button>
+          <button class="btn btn-sm btn-primary" type="button" (click)="saveNote(l)" [disabled]="!noteText.trim()">Agregar</button>
+        </div>
+      </div>
     </div>
     <div class="empty small" *ngIf="!cart.length">
       <app-icon name="pos"></app-icon>

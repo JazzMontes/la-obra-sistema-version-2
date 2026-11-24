@@ -1,4 +1,4 @@
-// Usuarios: alta de cuentas con contraseña temporal, rol y estado.
+// Usuarios: alta de cuentas (los datos de acceso le llegan por correo), rol y estado.
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
@@ -25,6 +25,7 @@ export class UsersPage {
   saving = false;
   formError = '';
   created: any = null;
+  busy: number | null = null;
 
   constructor(private api: ApiService, private ui: UiService, private auth: Auth) {}
 
@@ -57,7 +58,7 @@ export class UsersPage {
   }
 
   openNew() {
-    this.form = { name: '', username: '', email: '', role: 'employee' };
+    this.form = { name: '', username: '', email: '', role: 'employee', password: '' };
     this.formError = '';
     this.created = null;
     this.open = true;
@@ -68,15 +69,45 @@ export class UsersPage {
     this.formError = '';
     const f = this.form;
     if (!f.name.trim() || !f.username.trim() || !f.email.trim()) return void (this.formError = 'Completa nombre, usuario y correo');
+    if (/\s/.test(f.username.trim())) return void (this.formError = 'El usuario no puede llevar espacios');
+    if (f.password && f.password.length < 8) return void (this.formError = 'La contraseña debe tener al menos 8 caracteres (o déjala vacía)');
     this.saving = true;
     try {
-      const r = await this.api.post('users/create.php', { name: f.name.trim(), username: f.username.trim(), email: f.email.trim(), role: f.role });
-      this.created = { ...r.user, temporary_password: r.temporary_password };
+      const r = await this.api.post('users/create.php', {
+        name: f.name.trim(), username: f.username.trim(), email: f.email.trim(), role: f.role, password: f.password || null,
+      });
+      this.created = { ...r.user, temporary_password: r.temporary_password, email_sent: !!r.email_sent, email_error: r.email_error };
+      if (r.email_sent) this.ui.success('Cuenta creada y datos enviados por correo');
       await this.load();
     } catch (e) {
       this.formError = errorMessage(e, 'No se pudo crear el usuario');
     } finally {
       this.saving = false;
+    }
+  }
+
+  // Texto para mandar por WhatsApp si el correo no llegó
+  accessText(c: any): string {
+    return `La Obra\nUsuario: ${c.username}\nCorreo: ${c.email}\nContraseña temporal: ${c.temporary_password}\nAl entrar te pedirá crear tu propia contraseña.`;
+  }
+
+  // Nueva contraseña temporal, enviada por correo (por si no le llegó o la olvidó)
+  async resend(u: any) {
+    const ok = await this.ui.confirm(
+      'Reenviar acceso',
+      `Se generará una contraseña temporal nueva para ${u.name} y se le enviará a ${u.email}. La anterior dejará de funcionar.`,
+      'Reenviar'
+    );
+    if (!ok) return;
+    this.busy = u.id;
+    try {
+      const r: any = await this.api.post('users/resend-access.php', { id: u.id });
+      this.created = { ...r.user, temporary_password: r.temporary_password, email_sent: !!r.email_sent, email_error: r.email_error, resent: true };
+      this.open = true;
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudo reenviar el acceso'));
+    } finally {
+      this.busy = null;
     }
   }
 

@@ -66,16 +66,21 @@ returns text language plpgsql immutable as $$
 declare parts text[] := '{}'; r record; pz jsonb := z -> 'payment'; v_t text; v_m text;
 begin
   for r in
-    select coalesce(x.pid, y.pid) as pid, coalesce(y.name, x.name) as name, coalesce(x.qty, 0) as q0, coalesce(y.qty, 0) as q1, x.ord as o0, y.ord as o1
-      from (select (e ->> 'product_id')::int as pid, e ->> 'name' as name, (e ->> 'quantity')::int as qty, n as ord
+    select coalesce(x.pid, y.pid) as pid, coalesce(y.name, x.name) as name, coalesce(x.qty, 0) as q0, coalesce(y.qty, 0) as q1, x.ord as o0, y.ord as o1,
+           coalesce(x.notes, '[]'::jsonb) as n0, coalesce(y.notes, '[]'::jsonb) as n1
+      from (select (e ->> 'product_id')::int as pid, e ->> 'name' as name, (e ->> 'quantity')::int as qty, n as ord, e -> 'notes' as notes
               from jsonb_array_elements(coalesce(a -> 'items', '[]')) with ordinality s(e, n)) x
-      full join (select (e ->> 'product_id')::int as pid, e ->> 'name' as name, (e ->> 'quantity')::int as qty, n as ord
+      full join (select (e ->> 'product_id')::int as pid, e ->> 'name' as name, (e ->> 'quantity')::int as qty, n as ord, e -> 'notes' as notes
               from jsonb_array_elements(coalesce(z -> 'items', '[]')) with ordinality s(e, n)) y on y.pid = x.pid
      order by (x.ord is null), x.ord, y.ord
   loop
     if r.q0 = 0 and r.q1 > 0 then parts := parts || ('Agregó ' || r.q1 || '× ' || r.name);
     elsif r.q1 = 0 and r.q0 > 0 then parts := parts || ('Quitó ' || r.q0 || '× ' || r.name);
     elsif r.q0 <> r.q1 then parts := parts || (r.name || ': ' || r.q0 || ' → ' || r.q1);
+    end if;
+    -- Preferencias por pieza ("1 sin tomate")
+    if r.q1 > 0 and r.n0 is distinct from r.n1 then
+      parts := parts || ('Preferencias de ' || r.name || ': ' || coalesce(nullif(la_obra_v2.notes_text(r.n1), ''), 'ninguna'));
     end if;
   end loop;
   if (a ->> 'delivery_mode') is distinct from (z ->> 'delivery_mode') then
@@ -187,6 +192,8 @@ begin
     update la_obra_v2.order_items oi set standard_unit_cost = (la_obra_v2.product_cost(oi.product_id, v_mode) ->> 'standard_cost')::numeric
      where oi.order_id = v_id;
   end if;
+  -- Preferencias por pieza: se cambian solo si vienen; si no, se conservan (recortadas a la nueva cantidad)
+  perform la_obra_v2.order_apply_notes(v_id, b -> 'items');
   select round(coalesce(sum(subtotal), 0), 2) into v_total from la_obra_v2.order_items where order_id = v_id;
   update la_obra_v2.orders set total = v_total, delivery_mode = v_mode, customer_name = v_customer where id = v_id;
 

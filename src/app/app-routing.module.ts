@@ -26,6 +26,8 @@ const routes: Routes = [
   page('expenses', () => import('./pages/expenses/expenses.module').then(m => m.ExpensesPageModule), false, 'gastos'),
   page('attendance', () => import('./pages/attendance/attendance.module').then(m => m.AttendancePageModule), false, 'asistencia'),
   page('profile', () => import('./pages/profile/profile.module').then(m => m.ProfilePageModule)),
+  // Notas y recordatorios: para todos y en cualquier plan
+  page('notes', () => import('./pages/notes/notes.module').then(m => m.NotesPageModule)),
   page('billing', () => import('./pages/billing/billing.module').then(m => m.BillingPageModule)),
   page('student-validation', () => import('./pages/student-validation/student-validation.module').then(m => m.StudentValidationPageModule)),
 
