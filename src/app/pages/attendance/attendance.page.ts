@@ -49,6 +49,12 @@ interface WorkLocation {
   standalone: false,
 })
 export class AttendancePage {
+  // Vista sencilla (botón Llegué / Me voy y la lista) o vista técnica para la escuela
+  // (GPS, mapa, reglas de contexto y simulación): menú Escuela → Asistencia (técnico).
+  get tech(): boolean {
+    return /[?&]tech=1/.test(typeof location !== 'undefined' ? location.hash || '' : '');
+  }
+
   // Actualiza la vista al terminar peticiones y al entrar a la pantalla (Angular sin zone.js)
   private readonly memo = new Memo();
   private readonly refresher = autoRefresh();

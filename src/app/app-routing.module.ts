@@ -3,13 +3,13 @@
 // reescritura) nunca da 404 al recargar una pantalla, y no hace falta --base-href ni 404.html.
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
-import { adminGuard, authGuard, featureGuard } from './services/guards';
+import { adminGuard, authGuard } from './services/guards';
 
-// feature: función del plan que necesita la pantalla (ver supabase/13_planes_y_creditos.sql)
-const page = (path: string, load: () => Promise<any>, admin = false, feature?: string) => ({
+// Los planes ya no bloquean pantallas: solo se pide sesión (y rol de administrador donde aplica)
+const page = (path: string, load: () => Promise<any>, admin = false, _feature?: string) => ({
   path,
   loadChildren: load,
-  canActivate: feature ? [admin ? adminGuard : authGuard, featureGuard(feature)] : [admin ? adminGuard : authGuard],
+  canActivate: [admin ? adminGuard : authGuard],
 });
 
 const routes: Routes = [
@@ -38,6 +38,8 @@ const routes: Routes = [
   page('categories', () => import('./pages/categories/categories.module').then(m => m.CategoriesPageModule), true, 'ventas'),
   page('costs', () => import('./pages/costs/costs.module').then(m => m.CostsPageModule), true, 'recetas'),
   page('reports', () => import('./pages/reports/reports.module').then(m => m.ReportsPageModule), true, 'reportes'),
+  page('money', () => import('./pages/money/money.module').then(m => m.MoneyPageModule), true),
+  page('money-settings', () => import('./pages/money-settings/money-settings.module').then(m => m.MoneySettingsPageModule), true),
   page('users', () => import('./pages/users/users.module').then(m => m.UsersPageModule), true),
   page('payment-methods', () => import('./pages/payment-methods/payment-methods.module').then(m => m.PaymentMethodsPageModule), true, 'ventas'),
 

@@ -1,0 +1,262 @@
+// Dinero: tarjeta grande arriba, accesos rápidos y cuentas en cuadrícula
+.hero {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  padding: 22px;
+  background: linear-gradient(135deg, #1c1d20 0%, #2b2c31 100%);
+  color: #fff;
+  border: 0;
+  margin-bottom: 14px;
+
+  .hero-label {
+    display: block;
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.65);
+  }
+
+  .hero-value {
+    display: block;
+    font-size: 34px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 4px 0;
+    color: var(--brand);
+  }
+
+  .hero-sub {
+    font-size: 12.5px;
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .hero-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    padding-left: 16px;
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+
+    strong {
+      font-size: 19px;
+    }
+  }
+}
+
+@media (max-width: 520px) {
+  .hero {
+    grid-template-columns: 1fr;
+
+    .hero-side {
+      flex-direction: row;
+      justify-content: space-between;
+      padding-left: 0;
+      border-left: 0;
+      padding-top: 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  }
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+
+  .qa {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 6px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.2;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+
+    app-icon {
+      width: 22px;
+      height: 22px;
+      padding: 7px;
+      box-sizing: content-box;
+      border-radius: 10px;
+      background: var(--brand-soft);
+      color: var(--brand-ink);
+    }
+
+    &:active {
+      transform: scale(0.97);
+    }
+
+    &:hover {
+      border-color: var(--border-strong);
+    }
+  }
+}
+
+.tabs {
+  margin: 14px 0 6px;
+
+  .count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    margin-left: 4px;
+    padding: 0 6px;
+    border-radius: 99px;
+    background: var(--ink);
+    color: #fff;
+    font-size: 11.5px;
+  }
+}
+
+.acc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.acc {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+
+  &:hover {
+    box-shadow: var(--shadow);
+  }
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  .acc-icon {
+    width: 34px;
+    height: 34px;
+    padding: 7px;
+    border-radius: 10px;
+    background: var(--info-soft);
+    color: var(--info);
+    margin-bottom: 6px;
+
+    &.cash {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    &.reserve {
+      background: var(--brand-soft);
+      color: var(--brand-ink);
+    }
+
+    &.fixed {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+  }
+
+  .acc-name {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--text);
+  }
+
+  .acc-kind {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .acc-balance {
+    font-size: 20px;
+    font-weight: 750;
+    letter-spacing: -0.01em;
+    margin-top: 2px;
+  }
+}
+
+.neg {
+  color: var(--danger);
+}
+
+.soft-tip {
+  margin-top: 16px;
+}
+
+.debt-row {
+  align-items: flex-start;
+
+  .debt-meter {
+    margin: 8px 0 4px;
+    max-width: 220px;
+  }
+}
+
+.stack-end {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+
+  strong {
+    font-size: 17px;
+  }
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.detail-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+
+  .detail-balance {
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+}
+
+.list-row {
+  .end {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .avatar.in {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  &.cancelled {
+    opacity: 0.55;
+
+    .title,
+    strong {
+      text-decoration: line-through;
+    }
+  }
+}

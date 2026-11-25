@@ -14,7 +14,7 @@
     <div class="page-intro">
       <div>
         <h1>Gastos y salidas</h1>
-        <p>Salidas de caja que no son compras de insumos: gas, limpieza, hielo, transporte. Se restan en el corte del día.</p>
+        <p>Lo que sale y no es compra de insumos: gas, limpieza, hielo, transporte. Los pagados con efectivo de la caja se restan en el corte del día.</p>
       </div>
     </div>
 
@@ -48,6 +48,7 @@
             <div class="title" [class.strike]="e.status !== 'active'">{{ e.reason }}</div>
             <div class="sub">
               {{ e.created_at | dateMx: 'datetime' }} · {{ e.user_name }}
+              <span class="badge badge-info from" *ngIf="accounts.length && !isFromCash(e)">de {{ accountName(e.account_id) }}</span>
               <span *ngIf="e.status !== 'active'"> · cancelado: {{ e.cancellation_reason }}</span>
             </div>
           </div>
@@ -87,6 +88,15 @@
           <div class="chips">
             <button type="button" *ngFor="let s of suggestions" (click)="form.reason = s">{{ s }}</button>
           </div>
+        </div>
+        <div class="field" *ngIf="accounts.length">
+          <label for="x-acc">¿De dónde salió el dinero?</label>
+          <select id="x-acc" class="select" [(ngModel)]="form.account_id">
+            <option [ngValue]="null">Efectivo de la caja</option>
+            <ng-container *ngFor="let a of accounts">
+              <option *ngIf="a.id !== cashId" [ngValue]="a.id">{{ a.name }}{{ a.is_reserve ? ' (apartado)' : '' }}</option>
+            </ng-container>
+          </select>
         </div>
         <div class="field" *ngIf="editing">
           <label for="x-change">Motivo del cambio</label>

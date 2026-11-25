@@ -12,12 +12,12 @@
 
 // ---------- Tokens ----------
 :root {
-  --bg: #f5f5f2;
+  --bg: #f4f2ec;
   --surface: #ffffff;
-  --surface-2: #fafaf8;
-  --surface-3: #f0efeb;
-  --border: #e6e4de;
-  --border-strong: #d6d3cb;
+  --surface-2: #faf9f5;
+  --surface-3: #efece4;
+  --border: #e7e3d8;
+  --border-strong: #d5d0c3;
   --text: #17181a;
   --text-2: #3d4046;
   --muted: #6c7078;
@@ -39,9 +39,9 @@
   --info-soft: #e7eefc;
 
   --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgba(23, 24, 26, 0.05);
+  --radius: 13px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(40, 32, 10, 0.05), 0 2px 8px rgba(40, 32, 10, 0.03);
   --shadow: 0 1px 3px rgba(23, 24, 26, 0.06), 0 6px 16px rgba(23, 24, 26, 0.05);
   --shadow-lg: 0 12px 40px rgba(23, 24, 26, 0.16);
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -1093,4 +1093,95 @@ app-icon {
     width: 100%;
     height: 100%;
   }
+}
+
+
+// =====================================================================
+// Detalles de marca (negro y amarillo, como el menú impreso de La Obra)
+// =====================================================================
+.page-intro h1 {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+
+  &::after {
+    content: '';
+    display: block;
+    width: 34px;
+    height: 4px;
+    margin-top: 8px;
+    border-radius: 99px;
+    background: var(--brand);
+  }
+}
+
+.app-header ion-toolbar {
+  --border-color: transparent;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.btn-primary {
+  box-shadow: 0 2px 0 rgba(160, 115, 0, 0.35);
+
+  &:active {
+    transform: translateY(1px);
+    box-shadow: none;
+  }
+}
+
+.card {
+  transition: box-shadow 0.15s ease;
+}
+
+.kpi .kpi-label app-icon {
+  color: var(--brand-ink);
+}
+
+.section-title h2 {
+  font-size: 16px;
+}
+
+.fab {
+  box-shadow: 0 8px 24px rgba(255, 197, 38, 0.45), 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+// Usados en varias pantallas (antes vivían solo en Gastos)
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button {
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text-2);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+
+    &:hover {
+      border-color: var(--brand-hover);
+      background: var(--brand-soft);
+    }
+
+    &.active {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+  }
+}
+
+.big-input {
+  font-size: 20px !important;
+  font-weight: 700;
+}
+
+.strike {
+  text-decoration: line-through;
+  color: var(--faint);
 }

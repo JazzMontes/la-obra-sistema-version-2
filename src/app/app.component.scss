@@ -580,3 +580,132 @@ ion-split-pane {
   font-size: 12px !important;
   color: var(--muted) !important;
 }
+
+// =====================================================================
+// Estilo de marca: menú negro con amarillo, como el menú impreso de La Obra
+// =====================================================================
+.side-menu {
+  --background: #141416;
+}
+
+ion-split-pane {
+  --border: 0;
+}
+
+.menu-shell {
+  background: #141416;
+  color: #f4f2ec;
+}
+
+.brand {
+  padding: 22px 18px 16px;
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 13px;
+    background: var(--brand);
+    color: #141416;
+    font-size: 15px;
+    box-shadow: 0 6px 18px rgba(255, 197, 38, 0.28);
+  }
+
+  .brand-name {
+    color: #fff;
+    font-size: 17px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .brand-sub {
+    color: rgba(255, 255, 255, 0.5);
+  }
+}
+
+.nav-title {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.nav-item {
+  color: rgba(255, 255, 255, 0.78);
+  transition: background 0.12s ease, color 0.12s ease;
+
+  app-icon {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #fff;
+  }
+
+  &.active {
+    background: var(--brand);
+    color: #141416;
+    font-weight: 700;
+
+    app-icon {
+      color: #141416;
+    }
+  }
+}
+
+// "Escuela" va plegada al final
+.nav-school {
+  margin-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  padding-top: 4px;
+}
+
+.nav-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+
+  app-icon {
+    width: 14px;
+    height: 14px;
+    transition: transform 0.15s ease;
+
+    &.open {
+      transform: rotate(90deg);
+    }
+  }
+}
+
+.menu-user {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  .btn-ghost {
+    color: rgba(255, 255, 255, 0.6);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+  }
+}
+
+.user-chip {
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .avatar {
+    background: var(--brand);
+    color: #141416;
+  }
+
+  .user-name {
+    color: #fff;
+  }
+
+  .user-role {
+    color: rgba(255, 255, 255, 0.5);
+  }
+}

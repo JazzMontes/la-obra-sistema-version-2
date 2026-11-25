@@ -1,6 +1,10 @@
 // Corte de caja del día (parte de la operación, junto con Punto de venta y Pedidos).
 //
-//   Efectivo esperado en caja = fondo + ventas en efectivo − gastos y salidas
+//   Efectivo esperado en caja = fondo + ventas en efectivo − gastos pagados en efectivo
+//                               ± movimientos de efectivo (encargos, depósitos, cobros…)
+//
+// · Administradores: "Reparto del día" = venta del día − gastos fijos = sobrante, y a cada
+//   apartado le toca su % del sobrante (se configura en Cómo reparto mi venta).
 //
 // · Las ventas se separan por método de pago (efectivo, tarjeta, transferencia…).
 //   Solo el efectivo se queda en la caja; tarjeta y transferencia van al banco.
@@ -52,6 +56,11 @@ export class CashCutPage {
   server: any = null;
   saving = false;
 
+  // Reparto del día (solo administradores)
+  reserve: any = null;
+  reserveAmounts: Record<number, number | null> = {};
+  savingReserve = false;
+
   // Editar fondo
   fundOpen = false;
   fundAmount: number | null = null;
@@ -77,6 +86,7 @@ export class CashCutPage {
     this.loading = true;
     this.counted = null;
     this.notes = '';
+    if (this.isAdmin) void this.loadReserve();
     try {
       try {
         this.server = (await this.api.get('cash/cut.php', { date: this.date })).cut;
@@ -103,6 +113,60 @@ export class CashCutPage {
     } finally {
       this.loading = false;
     }
+  }
+
+  // ---------- Reparto del día ----------
+  async loadReserve() {
+    try {
+      const r = (await this.api.get('money/reserve', { date: this.date })).reserve;
+      this.reserve = r;
+      this.reserveAmounts = {};
+      const saved = new Map<number, number>((r.saved?.items ?? []).map((i: any) => [Number(i.account_id), Number(i.amount)]));
+      for (const it of r.items) {
+        this.reserveAmounts[it.account_id] = r.saved ? saved.get(Number(it.account_id)) ?? 0 : Number(it.suggested);
+      }
+    } catch {
+      // Si la base de datos todavía no tiene el archivo 15, simplemente no se muestra
+      this.reserve = null;
+    }
+  }
+
+  get reserveTotal(): number {
+    return round(Object.values(this.reserveAmounts).reduce((t: number, v) => t + (Number(v) || 0), 0));
+  }
+
+  useSuggested() {
+    for (const it of this.reserve?.items ?? []) this.reserveAmounts[it.account_id] = Number(it.suggested);
+  }
+
+  async saveReserve() {
+    if (this.savingReserve || !this.reserve) return;
+    if (this.reserve.saved) {
+      const ok = await this.ui.confirm('Volver a guardar', 'Los apartados de este día ya se habían guardado. Se reemplazan por estos montos.', 'Reemplazar');
+      if (!ok) return;
+    }
+    this.savingReserve = true;
+    try {
+      const items = this.reserve.items.map((it: any) => ({
+        account_id: it.account_id,
+        amount: Math.max(0, Math.round((Number(this.reserveAmounts[it.account_id]) || 0) * 100) / 100),
+      }));
+      await this.api.post('money/reserve', { date: this.date, items });
+      this.ui.success('Apartados guardados');
+      await this.loadReserve();
+    } catch (e) {
+      this.ui.error(errorMessage(e, 'No se pudieron guardar los apartados'));
+    } finally {
+      this.savingReserve = false;
+    }
+  }
+
+  get cashMoves(): number {
+    return round(Number(this.server?.cash_moves) || 0);
+  }
+
+  get cashMovesList(): any[] {
+    return this.server?.cash_moves_list ?? [];
   }
 
   get savedCuts(): any[] {
@@ -202,7 +266,7 @@ export class CashCutPage {
 
   // Efectivo que dejaron las ventas del día (sin el fondo)
   get cashFromSales(): number {
-    return round(this.cashSales - this.expensesTotal);
+    return round(this.cashSales - this.expensesTotal + this.cashMoves);
   }
 
   // Lo que debe haber físicamente en la caja

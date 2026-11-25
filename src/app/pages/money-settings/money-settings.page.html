@@ -1,0 +1,158 @@
+<ion-header class="app-header">
+  <ion-toolbar>
+    <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
+    <ion-title>Cómo reparto mi venta</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm" type="button" (click)="save()" [disabled]="saving || loading">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="page page-narrow">
+    <div class="page-intro">
+      <div>
+        <h1>Cómo reparto mi venta</h1>
+        <p>Esto lo configuras de vez en cuando. Cada día, en el corte de caja, la app hace la cuenta sola.</p>
+      </div>
+    </div>
+
+    <ng-container *ngIf="loading">
+      <div class="skeleton" *ngFor="let i of [1, 2, 3]"></div>
+    </ng-container>
+
+    <ng-container *ngIf="!loading">
+      <!-- Cómo funciona, con ejemplo en vivo -->
+      <section class="card flow">
+        <div class="flow-head">
+          <span class="small muted">Ejemplo: si en el día vendes</span>
+          <div class="input-group ex-input">
+            <span class="addon">$</span>
+            <input class="input" type="number" inputmode="decimal" min="0" [(ngModel)]="example" aria-label="Venta de ejemplo" />
+          </div>
+        </div>
+        <div class="flow-steps">
+          <div class="step">
+            <span class="step-n">1</span>
+            <div class="grow">
+              <div class="strong">Primero se apartan los gastos fijos</div>
+              <div class="small muted" *ngFor="let r of fixed">{{ r.name || 'Sin nombre' }}: {{ r.value | money }}</div>
+              <div class="small muted" *ngIf="!fixed.length">No tienes gastos fijos</div>
+            </div>
+            <strong class="num">− {{ fixedTotal | money }}</strong>
+          </div>
+          <div class="step">
+            <span class="step-n">2</span>
+            <div class="grow"><div class="strong">Lo que sobra</div></div>
+            <strong class="num big">{{ exLeft | money }}</strong>
+          </div>
+          <div class="step">
+            <span class="step-n">3</span>
+            <div class="grow">
+              <div class="strong">De lo que sobra, cada apartado se lleva su %</div>
+              <div class="parts">
+                <span class="part" *ngFor="let r of percent">{{ r.name || 'Sin nombre' }} {{ r.value || 0 }} % = <b>{{ exPart(r) | money }}</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="step last">
+            <span class="step-n"><app-icon name="check"></app-icon></span>
+            <div class="grow"><div class="strong">Te queda libre</div></div>
+            <strong class="num big ok">{{ exRest | money }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- Gastos fijos -->
+      <div class="section-title">
+        <h2>Gastos fijos <span class="muted small">(cantidad por día)</span></h2>
+        <button type="button" class="btn btn-sm" (click)="add('fixed')"><app-icon name="plus"></app-icon>Agregar</button>
+      </div>
+      <div class="card rows">
+        <div class="cfg-row" *ngFor="let r of fixed">
+          <span class="dot fixed"></span>
+          <input class="input grow" [(ngModel)]="r.name" maxlength="60" aria-label="Nombre" placeholder="Ej. Renta, gas" />
+          <div class="input-group val">
+            <span class="addon">$</span>
+            <input class="input" type="number" inputmode="decimal" min="0" step="1" [(ngModel)]="r.value" aria-label="Cantidad por día" />
+          </div>
+          <button type="button" class="btn btn-ghost btn-icon" (click)="remove(r)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
+        </div>
+        <p class="small muted pad" *ngIf="!fixed.length">Sin gastos fijos. Agrega uno si cada día apartas una cantidad fija antes de los porcentajes.</p>
+      </div>
+
+      <!-- Apartados por porcentaje -->
+      <div class="section-title">
+        <h2>Apartados <span class="muted small">(% de lo que sobra)</span></h2>
+        <button type="button" class="btn btn-sm" (click)="add('percent')"><app-icon name="plus"></app-icon>Agregar</button>
+      </div>
+      <div class="card rows">
+        <div class="cfg-row" *ngFor="let r of percent">
+          <span class="dot"></span>
+          <input class="input grow" [(ngModel)]="r.name" maxlength="60" aria-label="Nombre" placeholder="Ej. Ahorro" />
+          <div class="input-group val">
+            <input class="input" type="number" inputmode="decimal" min="0" max="100" step="0.5" [(ngModel)]="r.value" aria-label="Porcentaje" />
+            <span class="addon">%</span>
+          </div>
+          <button type="button" class="btn btn-ghost btn-icon" (click)="remove(r)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
+        </div>
+        <div class="rows-foot" [class.text-danger]="percentTotal > 100">
+          <span>Total</span><strong>{{ percentTotal }} %</strong>
+        </div>
+      </div>
+
+      <!-- Redondeo y origen -->
+      <div class="section-title"><h2>Detalles</h2></div>
+      <div class="card card-pad stack">
+        <div class="grid-2">
+          <div class="field">
+            <label for="rs-mode">Redondear los apartados</label>
+            <select id="rs-mode" class="select" [(ngModel)]="settings.round_mode">
+              <option *ngFor="let m of roundModes" [ngValue]="m.value">{{ m.label }}</option>
+            </select>
+          </div>
+          <div class="field" *ngIf="settings.round_mode !== 'none'">
+            <label for="rs-step">A múltiplos de</label>
+            <select id="rs-step" class="select" [(ngModel)]="settings.round_step">
+              <option *ngFor="let s of roundSteps" [ngValue]="s">${{ s }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="rs-src">Los apartados salen de</label>
+          <select id="rs-src" class="select" [(ngModel)]="settings.source_account_id">
+            <option *ngFor="let r of money" [ngValue]="r.id">{{ r.name }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Cuentas de dinero -->
+      <div class="section-title">
+        <h2>Dónde guardas el dinero</h2>
+        <div class="row-actions">
+          <button type="button" class="btn btn-sm" (click)="add('bank')"><app-icon name="plus"></app-icon>Banco</button>
+          <button type="button" class="btn btn-sm" (click)="add('cash')"><app-icon name="plus"></app-icon>Caja</button>
+        </div>
+      </div>
+      <div class="card rows">
+        <div class="cfg-row" *ngFor="let r of money">
+          <span class="acc-ic" [class.cash]="r.kind === 'cash'"><app-icon [name]="r.kind === 'cash' ? 'cash' : 'card'"></app-icon></span>
+          <input class="input grow" [(ngModel)]="r.name" maxlength="60" aria-label="Nombre" />
+          <button type="button" class="btn btn-ghost btn-icon" (click)="remove(r)" aria-label="Quitar"><app-icon name="trash"></app-icon></button>
+        </div>
+      </div>
+
+      <div class="section-title"><h2>¿A dónde cae cada forma de pago?</h2></div>
+      <div class="card rows">
+        <div class="cfg-row" *ngFor="let m of settings.methods">
+          <span class="grow strong">{{ m.name }}</span>
+          <select class="select method-sel" [(ngModel)]="m.account_id" [attr.aria-label]="'Cuenta de ' + m.name">
+            <option *ngFor="let r of money" [ngValue]="r.id">{{ r.name }}</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-block btn-lg save-bottom" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar cambios' }}</button>
+    </ng-container>
+  </div>
+</ion-content>
