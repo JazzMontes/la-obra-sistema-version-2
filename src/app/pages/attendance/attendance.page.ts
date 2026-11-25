@@ -17,6 +17,21 @@ import {
   distanceMeters,
   toDms,
 } from '../../services/geolocation';
+import { NetworkService } from '../../services/network';
+import {
+  Contexto,
+  Decision,
+  ETIQUETAS,
+  HORARIO_LABORAL,
+  Horario,
+  REGLAS,
+  Red,
+  Zona,
+  clasificarHorario,
+  clasificarRed,
+  clasificarZona,
+  evaluarReglas,
+} from '../../services/context-rules';
 
 interface WorkLocation {
   name: string;
@@ -68,12 +83,28 @@ export class AttendancePage {
 
   readonly toDms = toDms;
 
+  // ---------- Reglas de contexto ----------
+  readonly reglas = REGLAS;
+  readonly etiquetas = ETIQUETAS;
+  readonly horarioLaboral = HORARIO_LABORAL;
+  // Registro que quedó "en espera" por falta de internet (regla R2)
+  pendingCheck = false;
+  // El usuario pidió ver el mapa aunque la regla R4 lo ocultó
+  forceMap = false;
+  // Simulador (solo administrador): permite probar las reglas sin moverse ni apagar el Wi-Fi.
+  // En simulación nunca se envía nada al servidor.
+  sim = { activo: false, zona: 'dentro' as Zona, red: 'buena' as Red, horario: 'laboral' as Horario };
+  private clock = Date.now();
+  private clockTimer: any = null;
+  private readonly onOnline = () => setTimeout(() => this.flushPending(), 1500);
+
   constructor(
     private api: ApiService,
     private ui: UiService,
     private auth: Auth,
     private geo: GeolocationService,
-    private render: RenderService
+    private render: RenderService,
+    private net: NetworkService
   ) {}
 
   get isAdmin(): boolean {
@@ -91,6 +122,12 @@ export class AttendancePage {
     });
     // Si el permiso ya estaba concedido, se puede leer la ubicación sin molestar al usuario
     if (this.perm === 'granted' && !this.reading) this.locate();
+    // Contexto: la red avisa sola (evento "online"); el reloj se revisa cada 30 s para el horario
+    window.addEventListener('online', this.onOnline);
+    this.clockTimer = setInterval(() => {
+      this.clock = Date.now();
+      this.render.schedule();
+    }, 30000);
     this.render.schedule();
   }
 
@@ -99,6 +136,8 @@ export class AttendancePage {
     this.stopLive();
     this.stopPermWatch?.();
     this.stopPermWatch = null;
+    window.removeEventListener('online', this.onOnline);
+    clearInterval(this.clockTimer);
   }
 
   async load() {
@@ -219,6 +258,86 @@ export class AttendancePage {
     return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   }
 
+  // ---------- Contexto y decisión ----------
+
+  // Variables de contexto medidas por los sensores (o las del simulador)
+  get contexto(): Contexto {
+    const zona: Zona = this.sim.activo
+      ? this.sim.zona
+      : clasificarZona(this.distance, this.location?.radius_m ?? null, this.reading?.accuracy ?? null);
+    const red: Red = this.sim.activo ? this.sim.red : clasificarRed(this.net.quality);
+    const horario: Horario = this.sim.activo ? this.sim.horario : clasificarHorario(new Date(this.clock));
+    const accion = this.nextType === 'in' ? 'llegada' : 'salida';
+    const ahorroDatos = !this.sim.activo && this.net.saveData;
+    return this.memo.get('ctx', [zona, red, horario, accion, ahorroDatos], () => ({ zona, red, horario, accion, ahorroDatos }));
+  }
+
+  // Lo que deciden las reglas para el contexto actual (mismo objeto mientras no cambie)
+  get decision(): Decision {
+    const c = this.contexto;
+    return this.memo.get('decision', [c], () => evaluarReglas(c));
+  }
+
+  get showMap(): boolean {
+    return this.decision.mostrarMapa || this.forceMap;
+  }
+
+  isActive(id: string): boolean {
+    return this.decision.reglas.includes(id);
+  }
+
+  setSim(key: 'zona' | 'red' | 'horario', value: string) {
+    (this.sim as any)[key] = value;
+    this.sim = { ...this.sim };
+  }
+
+  toggleSim() {
+    this.sim = { ...this.sim, activo: !this.sim.activo };
+    this.pendingCheck = false;
+    this.checkError = '';
+  }
+
+  // Regla R2: al volver internet, el registro en espera se envía solo (con una ubicación nueva)
+  private async flushPending() {
+    if (!this.pendingCheck || this.sim.activo) return;
+    this.pendingCheck = false;
+    this.ui.info('Volvió la conexión: enviando tu registro en espera…');
+    await this.check();
+  }
+
+  // Botón principal: lo que hace depende de la decisión de las reglas
+  async onMainButton() {
+    this.checkError = '';
+    const d = this.decision;
+    if (d.notaObligatoria && !this.note.trim() && d.registro !== 'ubicar' && d.registro !== 'bloqueado') {
+      return void (this.checkError = `Estás fuera del horario laboral (${HORARIO_LABORAL.inicio}–${HORARIO_LABORAL.fin}). Escribe en la nota por qué registras tu llegada a esta hora.`);
+    }
+    if (this.sim.activo) {
+      const what = d.registro === 'en-linea' ? 'se enviaría el registro al servidor'
+        : d.registro === 'al-volver-red' ? 'el registro quedaría en espera hasta que vuelva internet'
+        : d.registro === 'ubicar' ? 'se pediría la ubicación' : 'el botón estaría bloqueado';
+      return this.ui.info(`Simulación (${d.reglas.join(' + ') || 'sin reglas'}): ${what}. No se envió nada.`);
+    }
+    switch (d.registro) {
+      case 'ubicar':
+        await this.locate();
+        return;
+      case 'bloqueado':
+        return;
+      case 'al-volver-red':
+        this.pendingCheck = true;
+        this.ui.info('Registro en espera: se enviará en cuanto vuelva la conexión. No cierres esta pantalla.');
+        return;
+      case 'en-linea':
+        await this.check();
+        return;
+    }
+  }
+
+  cancelPending() {
+    this.pendingCheck = false;
+  }
+
   // ---------- Registrar entrada / salida ----------
 
   async check() {
@@ -232,6 +351,11 @@ export class AttendancePage {
     if (!r) return;
     if (this.lowAccuracy) return void (this.checkError = `La ubicación es poco precisa (±${Math.round(r.accuracy)} m). Activa el GPS de alta precisión o acércate a una ventana.`);
     if (!this.inside) return void (this.checkError = `Estás a ${Math.round(this.distance ?? 0)} m de ${this.location.name}. Debes estar a menos de ${this.location.radius_m} m.`);
+    // Si mientras tanto se fue el internet, la regla R2 deja el registro en espera
+    if (this.net.quality === 'offline') {
+      this.pendingCheck = true;
+      return void this.ui.info('Se fue la conexión: tu registro quedó en espera.');
+    }
 
     const type = this.nextType;
     this.saving = true;

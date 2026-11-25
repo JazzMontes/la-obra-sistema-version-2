@@ -1,0 +1,53 @@
+Pruebas de reglas de contexto · La Obra v2 · 24/11/2026, 9:38:53 p.m.
+==============================================================================
+
+1. Empleado en el local, Wi-Fi bueno, 9:15
+  Sensores : distancia=35 m (radio 100 m, ±12 m) · red=good · hora=09:15 · llegada
+  Contexto : zona=dentro · red=buena · horario=laboral
+  Reglas   : R1
+  Decisión : registro=en-linea · botón habilitado "Registrar mi llegada"
+             mapa=sí · nota opcional · cómo llegar=no
+  Esperado : R1 / en-linea  →  PASA ✔
+
+2. Empleado en el local, modo avión, 9:20
+  Sensores : distancia=40 m (radio 100 m, ±15 m) · red=offline · hora=09:20 · llegada
+  Contexto : zona=dentro · red=sin-conexion · horario=laboral
+  Reglas   : R2 + R4
+  Decisión : registro=al-volver-red · botón habilitado "Registrar mi llegada al volver la conexión"
+             mapa=no (modo ligero) · nota opcional · cómo llegar=no
+  Esperado : R2 + R4 / al-volver-red  →  PASA ✔
+
+3. Empleado a 1.2 km (en camino), datos móviles buenos, 8:50
+  Sensores : distancia=1200 m (radio 100 m, ±20 m) · red=good · hora=08:50 · llegada
+  Contexto : zona=fuera · red=buena · horario=laboral
+  Reglas   : R3
+  Decisión : registro=bloqueado · botón DESHABILITADO "Acércate al negocio para registrar tu llegada"
+             mapa=sí · nota opcional · cómo llegar=sí
+  Esperado : R3 / bloqueado  →  PASA ✔
+
+4. Empleado en el local, 3G lento, 6:40 (antes de abrir)
+  Sensores : distancia=20 m (radio 100 m, ±18 m) · red=weak · hora=06:40 · llegada
+  Contexto : zona=dentro · red=lenta · horario=fuera
+  Reglas   : R1 + R4 + R5
+  Decisión : registro=en-linea · botón habilitado "Registrar mi llegada"
+             mapa=no (modo ligero) · nota OBLIGATORIA · cómo llegar=no
+  Esperado : R1 + R4 + R5 / en-linea  →  PASA ✔
+
+5. Empleado sale a las 22:30, Wi-Fi bueno
+  Sensores : distancia=30 m (radio 100 m, ±10 m) · red=good · hora=22:30 · salida
+  Contexto : zona=dentro · red=buena · horario=fuera
+  Reglas   : R1
+  Decisión : registro=en-linea · botón habilitado "Registrar mi salida"
+             mapa=sí · nota opcional · cómo llegar=no
+  Esperado : R1 / en-linea  →  PASA ✔
+
+6. GPS impreciso (±400 m) dentro de un edificio
+  Sensores : distancia=50 m (radio 100 m, ±400 m) · red=good · hora=10:00 · llegada
+  Contexto : zona=desconocida · red=buena · horario=laboral
+  Reglas   : (ninguna)
+  Decisión : registro=ubicar · botón habilitado "Obtener mi ubicación"
+             mapa=sí · nota opcional · cómo llegar=no
+  Esperado : (ninguna) / ubicar  →  PASA ✔
+
+==============================================================================
+6 de 6 escenarios pasan.

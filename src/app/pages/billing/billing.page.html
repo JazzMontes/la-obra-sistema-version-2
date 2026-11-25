@@ -15,7 +15,7 @@
     <div class="page-intro">
       <div>
         <h1>Plan y créditos</h1>
-        <p>El plan y los créditos son del negocio{{ s?.business?.name ? ' (' + s?.business?.name + ')' : '' }}: todos sus usuarios usan lo que el negocio tiene contratado.</p>
+        <p>El plan y los créditos son del negocio{{ s?.business?.name ? ' (' + s.business.name + ')' : '' }}: todos sus usuarios usan lo que el negocio tiene contratado.</p>
       </div>
     </div>
 
@@ -52,9 +52,9 @@
       <div class="notice warning" *ngIf="sub?.cancel_requested_at">
         <app-icon name="info"></app-icon>
         <div class="grow">
-          Plan cancelado el {{ sub?.cancel_requested_at | dateMx }}. Se quita al terminar el mes en curso: seguirá funcionando hasta el
-          <strong>{{ sub?.ends_at | dateMx: 'datetime' }}</strong> y después el negocio pasará al {{ freePlanName }} (tus datos no se borran).
-          <span *ngIf="(sub?.cancel_refund ?? 0) > 0">Por los meses que ya no usarás se te devolvieron {{ sub?.cancel_refund }} créditos.</span>
+          Plan cancelado el {{ sub.cancel_requested_at | dateMx }}. Se quita al terminar el mes en curso: seguirá funcionando hasta el
+          <strong>{{ sub.ends_at | dateMx: 'datetime' }}</strong> y después el negocio pasará al {{ freePlanName }} (tus datos no se borran).
+          <span *ngIf="sub.cancel_refund > 0">Por los meses que ya no usarás se te devolvieron {{ sub.cancel_refund }} créditos.</span>
         </div>
         <button class="btn btn-sm" type="button" *ngIf="isAdmin" (click)="resumePlan()">Reactivar</button>
       </div>
@@ -90,7 +90,7 @@
             Ya pagado después: {{ planName(s.queued[0].plan_code) }} desde {{ s.queued[0].starts_at | dateMx }}
           </div>
           <div class="kpi-note" *ngIf="!sub">Sin costo · no vence</div>
-          <div class="kpi-note text-warning" *ngIf="sub?.cancel_requested_at">Cancelado · termina el {{ sub?.ends_at | dateMx }}</div>
+          <div class="kpi-note text-warning" *ngIf="sub?.cancel_requested_at">Cancelado · termina el {{ sub.ends_at | dateMx }}</div>
           <button class="link small plan-cancel" type="button" *ngIf="canCancel" (click)="cancelPlan()">Cancelar plan</button>
         </div>
         <div class="card kpi">

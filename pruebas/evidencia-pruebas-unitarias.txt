@@ -1,0 +1,14 @@
+  ✔ Reglas de contexto › Escenario 1 · dentro de la zona + internet → R1: registro en línea
+  ✔ Reglas de contexto › Escenario 2 · dentro de la zona sin internet → R2 + R4: registro en espera y sin mapa
+  ✔ Reglas de contexto › Escenario 3 · fuera de la zona con internet → R3: registro bloqueado y "Cómo llegar"
+  ✔ Reglas de contexto › Escenario 4 · dentro, red lenta, fuera de horario → R1 + R4 + R5
+  ✔ Reglas de contexto › Escenario 5 · fuera de horario pero registrando SALIDA → R5 no aplica
+  ✔ Reglas de contexto › Escenario 6 · sin ubicación → ninguna regla de registro: pide la ubicación
+  ✔ Reglas de contexto › Escenario 7 · fuera de la zona y sin internet → no ofrece "Cómo llegar" (no cargaría)
+  ✔ Reglas de contexto › Ahorro de datos activa el modo ligero aunque la red sea buena
+  ✔ Reglas de contexto › R1, R2 y R3 nunca se cumplen a la vez
+  ✔ Clasificación de los sensores › zona: dentro, fuera y desconocida (sin lectura o GPS impreciso)
+  ✔ Clasificación de los sensores › red: usa la calidad del sensor de red
+  ✔ Clasificación de los sensores › horario: 07:00–22:00 es laboral
+
+12 pruebas pasan, 0 fallan

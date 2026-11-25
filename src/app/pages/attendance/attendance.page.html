@@ -117,8 +117,16 @@
           <a class="link small" [href]="mapUrl(r.latitude, r.longitude)" target="_blank" rel="noopener">Ver en el mapa</a>
         </div>
 
-        <!-- Mapa de calles: el negocio con su radio y tú con tu margen de error -->
-        <figure class="street">
+        <!-- Mapa de calles: el negocio con su radio y tú con tu margen de error (la regla R4 lo oculta con red lenta) -->
+        <div class="notice light-mode" *ngIf="!showMap">
+          <app-icon name="layers"></app-icon>
+          <div class="grow">
+            <strong>Modo ligero (regla R4)</strong>
+            <div>Tu conexión es lenta o tienes ahorro de datos: el mapa de calles no se descarga. Distancia: {{ distance !== null ? (distance | number: '1.0-0') + ' m' : '—' }}.</div>
+            <button class="btn btn-sm retry" type="button" (click)="forceMap = true">Mostrar el mapa de todos modos</button>
+          </div>
+        </div>
+        <figure class="street" *ngIf="showMap">
           <app-street-map [center]="location" [radius]="location?.radius_m ?? null" [me]="mapMe" [inside]="location ? inside : null" [label]="location?.name || ''" [height]="300"></app-street-map>
           <figcaption class="small muted">
             <span class="key shop"></span>{{ location?.name || 'Negocio' }}
@@ -131,7 +139,7 @@
     </div>
 
     <!-- Mapa del negocio mientras no hay lectura del GPS -->
-    <div class="card card-pad block-gap" *ngIf="location && !reading && !locating">
+    <div class="card card-pad block-gap" *ngIf="location && !reading && !locating && showMap">
       <figure class="street">
         <app-street-map [center]="location" [radius]="location.radius_m" [label]="location.name" [height]="240"></app-street-map>
         <figcaption class="small muted">
@@ -141,7 +149,74 @@
       </figure>
     </div>
 
-    <!-- 4. Registrar llegada / salida -->
+    <!-- 4. Reglas de contexto: qué ve la app ahora y qué reglas se cumplen -->
+    <div class="card block-gap ctx-card" *ngIf="location">
+      <div class="card-head">
+        <div class="row">
+          <h3>Reglas de contexto</h3>
+          <span class="badge badge-warning" *ngIf="sim.activo">Simulación</span>
+        </div>
+        <button class="btn btn-sm" type="button" *ngIf="isAdmin" (click)="toggleSim()" [class.btn-dark]="sim.activo">{{ sim.activo ? 'Usar sensores reales' : 'Simular contexto' }}</button>
+      </div>
+      <div class="card-pad stack">
+        <div class="ctx-vars">
+          <div class="ctx-var" [class.ok]="contexto.zona === 'dentro'" [class.bad]="contexto.zona === 'fuera'">
+            <app-icon name="pin"></app-icon>
+            <div><span class="small muted">Zona</span><strong>{{ etiquetas.zona[contexto.zona] }}</strong></div>
+          </div>
+          <div class="ctx-var" [class.ok]="contexto.red === 'buena'" [class.warn]="contexto.red === 'lenta'" [class.bad]="contexto.red === 'sin-conexion'">
+            <app-icon [name]="contexto.red === 'sin-conexion' ? 'wifiOff' : contexto.red === 'lenta' ? 'wifiLow' : 'wifi'"></app-icon>
+            <div><span class="small muted">Red</span><strong>{{ etiquetas.red[contexto.red] }}<span *ngIf="contexto.ahorroDatos"> · ahorro de datos</span></strong></div>
+          </div>
+          <div class="ctx-var" [class.ok]="contexto.horario === 'laboral'" [class.warn]="contexto.horario === 'fuera'">
+            <app-icon name="clock"></app-icon>
+            <div><span class="small muted">Horario ({{ horarioLaboral.inicio }}–{{ horarioLaboral.fin }})</span><strong>{{ etiquetas.horario[contexto.horario] }}</strong></div>
+          </div>
+        </div>
+
+        <!-- Simulador (solo administrador) -->
+        <div class="ctx-sim stack" *ngIf="sim.activo">
+          <div class="field">
+            <label>Zona</label>
+            <div class="segmented block">
+              <button type="button" [class.active]="sim.zona === 'dentro'" (click)="setSim('zona', 'dentro')">Dentro</button>
+              <button type="button" [class.active]="sim.zona === 'fuera'" (click)="setSim('zona', 'fuera')">Fuera</button>
+              <button type="button" [class.active]="sim.zona === 'desconocida'" (click)="setSim('zona', 'desconocida')">Sin GPS</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Red</label>
+            <div class="segmented block">
+              <button type="button" [class.active]="sim.red === 'buena'" (click)="setSim('red', 'buena')">Buena</button>
+              <button type="button" [class.active]="sim.red === 'lenta'" (click)="setSim('red', 'lenta')">Lenta</button>
+              <button type="button" [class.active]="sim.red === 'sin-conexion'" (click)="setSim('red', 'sin-conexion')">Sin conexión</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Horario</label>
+            <div class="segmented block">
+              <button type="button" [class.active]="sim.horario === 'laboral'" (click)="setSim('horario', 'laboral')">Laboral</button>
+              <button type="button" [class.active]="sim.horario === 'fuera'" (click)="setSim('horario', 'fuera')">Fuera de horario</button>
+            </div>
+          </div>
+          <p class="small faint">En simulación no se envía nada al servidor: el botón solo muestra lo que pasaría.</p>
+        </div>
+
+        <div class="ctx-rules">
+          <div class="ctx-rule" *ngFor="let r of reglas" [class.active]="isActive(r.id)">
+            <span class="ctx-id">{{ r.id }}</span>
+            <div class="grow">
+              <strong>{{ r.nombre }}</strong>
+              <div class="small muted">Si {{ r.condicion }}</div>
+              <div class="small" *ngIf="isActive(r.id)">→ {{ r.efecto }}</div>
+            </div>
+            <app-icon [name]="isActive(r.id) ? 'check' : 'minus'"></app-icon>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Registrar llegada / salida (el botón obedece a las reglas) -->
     <div class="card card-pad check-card block-gap" *ngIf="location">
       <div class="row-between">
         <div>
@@ -152,9 +227,26 @@
         </div>
         <span class="badge" [class.badge-success]="lastToday?.type === 'in'">{{ lastToday?.type === 'in' ? 'Presente' : 'Fuera' }}</span>
       </div>
+      <div class="notice" [ngClass]="decision.tono">
+        <app-icon [name]="decision.tono === 'success' ? 'check' : decision.tono === 'info' ? 'info' : 'alert'"></app-icon>
+        <div class="grow">
+          {{ decision.mensaje }}
+          <span class="small" *ngIf="decision.reglas.length"> ({{ decision.reglas.join(' + ') }})</span>
+          <div *ngIf="decision.mostrarComoLlegar && reading">
+            <a class="link" [href]="directionsUrl(reading.latitude, reading.longitude)" target="_blank" rel="noopener">Cómo llegar al negocio</a>
+          </div>
+        </div>
+      </div>
+      <div class="notice warning" *ngIf="pendingCheck">
+        <app-icon name="sync"></app-icon>
+        <div class="grow">
+          <strong>Registro en espera.</strong> Se enviará solo cuando vuelva internet (no cierres esta pantalla).
+          <button class="btn btn-sm retry" type="button" (click)="cancelPending()">Cancelar</button>
+        </div>
+      </div>
       <div class="field">
-        <label for="att-note">Nota (opcional)</label>
-        <input id="att-note" class="input" [(ngModel)]="note" maxlength="255" placeholder="Ej. llegué tarde por el tráfico" />
+        <label for="att-note">Nota {{ decision.notaObligatoria ? '(obligatoria: estás fuera de horario)' : '(opcional)' }}</label>
+        <input id="att-note" class="input" [(ngModel)]="note" maxlength="255" [placeholder]="decision.notaObligatoria ? '¿Por qué registras a esta hora?' : 'Ej. llegué tarde por el tráfico'" />
       </div>
       <div class="form-error" *ngIf="checkError">{{ checkError }}</div>
       <button
@@ -162,16 +254,16 @@
         type="button"
         [class.btn-primary]="nextType === 'in'"
         [class.btn-dark]="nextType === 'out'"
-        (click)="check()"
-        [disabled]="saving || locating || perm === 'insecure' || perm === 'unsupported'"
+        (click)="onMainButton()"
+        [disabled]="!decision.botonHabilitado || saving || locating || pendingCheck || perm === 'insecure' || perm === 'unsupported'"
       >
-        <app-icon [name]="nextType === 'in' ? 'pin' : 'logout'"></app-icon>
-        {{ saving ? 'Registrando…' : locating ? 'Obteniendo ubicación…' : nextType === 'in' ? 'Registrar mi llegada' : 'Registrar mi salida' }}
+        <app-icon [name]="decision.registro === 'al-volver-red' ? 'sync' : decision.registro === 'ubicar' ? 'target' : nextType === 'in' ? 'pin' : 'logout'"></app-icon>
+        {{ saving ? 'Registrando…' : locating ? 'Obteniendo ubicación…' : pendingCheck ? 'Esperando conexión…' : decision.textoBoton }}
       </button>
       <p class="small faint center">Se toma tu ubicación en ese momento y se guarda con la hora.</p>
     </div>
 
-    <!-- 5. Historial -->
+    <!-- 6. Historial -->
     <div class="section-title">{{ isAdmin ? 'Registros del equipo' : 'Tus registros de la semana' }}</div>
     <div class="card card-pad filters" *ngIf="isAdmin">
       <div class="field">
