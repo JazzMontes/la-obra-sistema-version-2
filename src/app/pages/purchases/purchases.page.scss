@@ -118,8 +118,13 @@
 .line-fields {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1.1fr);
   margin-top: 10px;
+
+  .addon {
+    padding: 0 8px;
+    font-size: 13px;
+  }
 
   @media (max-width: 700px) {
     grid-template-columns: 1fr 1fr;
@@ -179,5 +184,18 @@
 
   .modal-foot {
     flex-wrap: wrap;
+  }
+}
+
+// Última compra del insumo (de ahí sale lo prellenado)
+.line-last {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+
+  app-icon {
+    width: 14px;
+    height: 14px;
   }
 }

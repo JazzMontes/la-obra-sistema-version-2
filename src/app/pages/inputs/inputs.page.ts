@@ -1,5 +1,5 @@
-// Insumos: lo que se utiliza (nombre, unidad y presentación de compra).
-// El precio no se captura aquí; sale de las compras.
+// Insumos: lo que se utiliza (nombre, unidad con que se usa, cómo se compra y su costo).
+// El costo sale de la última compra, pero se puede cambiar aquí (gana el más reciente).
 import { ChangeDetectionStrategy, Component, ViewChild } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
@@ -35,13 +35,23 @@ export class InputsPage {
     this.load();
   }
 
-  otherUnits(i: any): string {
-    return (i.units ?? []).map((u: any) => u.name).join(', ');
+  // "por cucharada, pieza"
+  recipeUnits(i: any): string {
+    return (i.units ?? []).filter((u: any) => u.use_in !== 'purchase').map((u: any) => u.name).join(', ');
+  }
+
+  // "paquete (20 rebanada) · kg (1000 g)"
+  buyUnits(i: any): string {
+    const n = (v: number) => String(+Number(v).toFixed(3));
+    return (i.units ?? [])
+      .filter((u: any) => u.use_in !== 'recipe')
+      .map((u: any) => `${Number(u.unit_amount) !== 1 ? n(u.unit_amount) + ' ' : ''}${u.name} (${n(u.base_amount)} ${i.unit})`)
+      .join(' · ');
   }
 
   async load() {
     try {
-      this.items = (await this.api.get('inventory/index.php')).inventory;
+      this.items = (await this.api.get('inputs/index.php')).inputs;
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudieron cargar los insumos'));
     } finally {

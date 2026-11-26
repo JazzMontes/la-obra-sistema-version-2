@@ -9,9 +9,12 @@ export interface UnitOption {
   base_amount?: number;
 }
 
-export function unitOptions(input: any): UnitOption[] {
+// purpose: 'recipe' = medidas para recetas · 'purchase' = medidas para comprar · sin valor = todas
+// (cada medida del insumo dice para qué sirve en use_in: recipe, purchase o both)
+export function unitOptions(input: any, purpose?: 'recipe' | 'purchase'): UnitOption[] {
   if (!input) return [];
-  const extra = Array.isArray(input.units) ? input.units : [];
+  const all = Array.isArray(input.units) ? input.units : [];
+  const extra = purpose ? all.filter((u: any) => !u.use_in || u.use_in === 'both' || u.use_in === purpose) : all;
   return [
     { id: null, name: String(input.unit ?? ''), factor: 1 },
     ...extra.map((u: any) => ({

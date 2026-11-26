@@ -428,7 +428,7 @@ export class ProductsPage implements OnInit, OnDestroy {
   // Medidas en que se puede capturar un insumo (principal + pieza, cucharada…)
   componentUnits(c: RecipeLine): UnitOption[] {
     const inp = this.inputOf(c);
-    return this.memo.get('units:' + c.ref, [inp], () => unitOptions(inp));
+    return this.memo.get('units:' + c.ref, [inp], () => unitOptions(inp, 'recipe'));
   }
 
   componentUnit(c: RecipeLine): string {

@@ -174,7 +174,7 @@
 
         <div class="section-title">
           <h2>Artículos</h2>
-          <span class="small muted">Cómo lo compraste y a qué precio</span>
+          <span class="small muted">Se llena con tu última compra; cambia lo que sea distinto</span>
         </div>
 
         <div class="lines">
@@ -194,42 +194,44 @@
               </div>
               <button class="btn btn-ghost btn-icon remove" type="button" (click)="removeLine(i)" aria-label="Quitar renglón"><app-icon name="trash"></app-icon></button>
             </div>
-            <div class="line-fields">
+            <div class="line-fields" *ngIf="l.input_id">
               <div class="field">
                 <label [for]="'l-q-' + i">Cantidad</label>
                 <input [id]="'l-q-' + i" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="l.quantity" />
               </div>
               <div class="field">
-                <label [for]="'l-pk-' + i">Presentación</label>
-                <input [id]="'l-pk-' + i" class="input" [(ngModel)]="l.package_type" [attr.list]="'packs'" [placeholder]="input(l.input_id)?.unit || 'paquete, caja…'" maxlength="40" />
+                <label [for]="'l-u-' + i">Unidad</label>
+                <select [id]="'l-u-' + i" class="select" [(ngModel)]="l.buy_unit" (ngModelChange)="onUnitChange(l)">
+                  <option *ngFor="let o of lineOptions(l)" [ngValue]="o.name">{{ o.name }}</option>
+                </select>
               </div>
-              <div class="field">
-                <label [for]="'l-c-' + i">{{ l.package_type ? 'Cada ' + l.package_type + ' contiene' : 'Cada una contiene' }}</label>
+              <div class="field" *ngIf="!isBaseUnit(l)">
+                <label [for]="'l-c-' + i">Cada {{ l.buy_unit }} trae</label>
                 <div class="input-group">
                   <input [id]="'l-c-' + i" class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="l.content_per_package" />
-                  <span class="addon">{{ input(l.input_id)?.unit || 'unidad' }}</span>
+                  <span class="addon">{{ input(l.input_id)?.unit }}</span>
                 </div>
               </div>
               <div class="field">
-                <label [for]="'l-p-' + i">Precio por {{ l.package_type || input(l.input_id)?.unit || 'unidad' }}</label>
+                <label [for]="'l-p-' + i">Precio por {{ l.buy_unit || 'unidad' }}</label>
                 <div class="input-group">
                   <span class="addon">$</span>
                   <input [id]="'l-p-' + i" class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="l.unit_cost" />
                 </div>
               </div>
             </div>
+            <div class="line-last small muted" *ngIf="input(l.input_id)?.last_purchase as lp">
+              <app-icon name="history"></app-icon>
+              Última compra ({{ lp.date | dateMx: 'short' }}): {{ lp.quantity | qty }} {{ lp.buy_unit || input(l.input_id)?.unit }} a {{ lp.unit_cost | money }}
+            </div>
             <div class="line-summary" *ngIf="l.input_id">
-              <span>Entran <strong>{{ lineBase(l) | qty }} {{ input(l.input_id)?.unit }}</strong> al inventario</span>
+              <span>Son <strong>{{ lineBase(l) | qty }} {{ input(l.input_id)?.unit }}</strong></span>
               <span *ngIf="lineUnitCost(l) !== null">· {{ lineUnitCost(l) | money }} por {{ input(l.input_id)?.unit }}</span>
               <span class="grow"></span>
               <strong class="num">{{ lineTotal(l) | money }}</strong>
             </div>
           </div>
           <button class="btn btn-block add-line" type="button" (click)="addLine()"><app-icon name="plus"></app-icon>Agregar artículo</button>
-          <datalist id="packs">
-            <option value="paquete"></option><option value="caja"></option><option value="bolsa"></option>
-            <option value="kg"></option><option value="bote"></option><option value="charola"></option><option value="pieza"></option>
-          </datalist>
         </div>
 
         <div class="section-title"><h2>Foto del ticket</h2><span class="small muted">Opcional</span></div>
@@ -264,7 +266,7 @@
         <button class="btn btn-ghost btn-icon" type="button" (click)="inputModalOpen = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
       </div>
       <div class="modal-body">
-        <p class="muted small first">Al guardarlo se agrega a este renglón y sigues con la compra. La presentación y el precio los capturas en el renglón.</p>
+        <p class="muted small first">Al guardarlo se agrega a este renglón y sigues con la compra. Agrega cómo lo compras (paquete, kg…) en "Otras medidas" para que aparezca como unidad.</p>
         <app-input-form [initialName]="newInputName" (saved)="onInputCreated($event)"></app-input-form>
       </div>
       <div class="modal-foot">

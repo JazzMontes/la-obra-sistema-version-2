@@ -93,7 +93,7 @@ export class PreparationsPage {
   // Medidas en que se puede capturar el insumo (principal + otras)
   units(id: number | null): UnitOption[] {
     const inp = this.input(id);
-    return this.memo.get('units:' + id, [inp], () => unitOptions(inp));
+    return this.memo.get('units:' + id, [inp], () => unitOptions(inp, 'recipe'));
   }
 
   setInput(g: Ingredient, id: any) {

@@ -11,13 +11,17 @@ import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
 import { SearchOption } from '../../shared/search-select.component';
 
+// Un renglón de la compra. buy_unit: la unidad en que se compró (paquete, kg… o la principal);
+// content_per_package: cuánto de la unidad principal trae cada una (se prellena con la medida del insumo).
 interface Line {
   input_id: number | null;
-  package_type: string;
+  buy_unit: string;
   quantity: number | null;
   content_per_package: number | null;
   unit_cost: number | null;
 }
+
+interface BuyOption { name: string; factor: number; base: boolean; }
 
 const NEW_INPUT = -1;
 
@@ -140,7 +144,7 @@ export class PurchasesPage {
       };
       this.lines = full.items.map((i: any) => ({
         input_id: Number(i.input_id),
-        package_type: this.packLabel(this.input(Number(i.input_id))),
+        buy_unit: i.buy_unit || (Number(i.content_per_package) === 1 ? i.unit : this.packLabel(this.input(Number(i.input_id)))) || i.unit,
         quantity: Number(i.quantity),
         content_per_package: Number(i.content_per_package),
         unit_cost: Number(i.unit_cost),
@@ -155,7 +159,7 @@ export class PurchasesPage {
   }
 
   emptyLine(): Line {
-    return { input_id: null, package_type: '', quantity: 1, content_per_package: null, unit_cost: null };
+    return { input_id: null, buy_unit: '', quantity: 1, content_per_package: null, unit_cost: null };
   }
 
   addLine() {
@@ -186,12 +190,74 @@ export class PurchasesPage {
       return;
     }
     line.input_id = value === null ? null : Number(value);
-    // Prellenar con la última presentación con que se compró este insumo
+    this.prefill(line);
+  }
+
+  // ---------- Unidades de compra ----------
+  // La unidad principal y las medidas del insumo marcadas "para compras" (primero las de compra)
+  buyOptions(inputId: number | null): BuyOption[] {
+    const inp = this.input(inputId);
+    return this.memo.get('buy:' + inputId, [inp], () => {
+      if (!inp) return [];
+      const extra = (inp.units ?? [])
+        .filter((u: any) => u.use_in !== 'recipe')
+        .map((u: any) => ({ name: String(u.name), factor: Number(u.factor) || Number(u.base_amount) / (Number(u.unit_amount) || 1), base: false }));
+      return [...extra, { name: String(inp.unit), factor: 1, base: true }];
+    });
+  }
+
+  // Opciones del renglón (si una compra vieja usó una unidad que ya no existe, también aparece)
+  lineOptions(l: Line): BuyOption[] {
+    const opts = this.buyOptions(l.input_id);
+    if (!l.buy_unit || opts.some(o => o.name === l.buy_unit)) return opts;
+    return this.memo.get('lo:' + l.input_id + ':' + l.buy_unit, [opts], () => [...opts, { name: l.buy_unit, factor: Number(l.content_per_package) || 1, base: false }]);
+  }
+
+  private option(l: Line): BuyOption | undefined {
+    return this.buyOptions(l.input_id).find(o => o.name === l.buy_unit);
+  }
+
+  isBaseUnit(l: Line): boolean {
+    const inp = this.input(l.input_id);
+    return !!inp && l.buy_unit === inp.unit;
+  }
+
+  // Al elegir el insumo: lo de la última compra (unidad, cantidad, contenido y precio). Todo se puede cambiar.
+  private prefill(line: Line) {
     const inp = this.input(line.input_id);
-    if (inp) {
-      line.package_type = this.packLabel(inp);
-      line.content_per_package = Number(inp.package_quantity) || 1;
+    if (!inp) return;
+    const opts = this.buyOptions(line.input_id);
+    const lp = inp.last_purchase;
+    const fromLast = lp ? opts.find(o => o.name.toLowerCase() === String(lp.buy_unit || '').toLowerCase()) : undefined;
+    if (lp && (fromLast || !lp.buy_unit)) {
+      const opt = fromLast ?? opts[opts.length - 1];
+      line.buy_unit = opt.name;
+      line.quantity = Number(lp.quantity) || 1;
+      line.content_per_package = opt.base ? 1 : Number(lp.content_per_package) || opt.factor;
+      line.unit_cost = lp.unit_cost !== null && lp.unit_cost !== undefined ? Number(lp.unit_cost) : this.priceFor(inp, opt);
+      return;
     }
+    // Sin compras anteriores (o la unidad ya no existe): la primera unidad de compra y el costo del insumo
+    const opt = opts[0];
+    line.buy_unit = opt.name;
+    line.quantity = 1;
+    line.content_per_package = opt.factor;
+    line.unit_cost = this.priceFor(inp, opt);
+  }
+
+  // Precio sugerido para una unidad: el de la última compra si fue en esa unidad; si no, costo × contenido
+  private priceFor(inp: any, opt: BuyOption, content = opt.factor): number | null {
+    const lp = inp?.last_purchase;
+    if (lp && String(lp.buy_unit || '').toLowerCase() === opt.name.toLowerCase() && Number(lp.content_per_package) === content) return Number(lp.unit_cost);
+    if (inp?.unit_cost === null || inp?.unit_cost === undefined) return null;
+    return Math.round(Number(inp.unit_cost) * content * 100) / 100;
+  }
+
+  onUnitChange(l: Line) {
+    const opt = this.option(l);
+    if (!opt) return;
+    l.content_per_package = opt.factor;
+    l.unit_cost = this.priceFor(this.input(l.input_id), opt);
   }
 
   async saveInput() {
@@ -206,8 +272,7 @@ export class PurchasesPage {
     this.inputs = [...this.inputs, input].sort((a, b) => a.name.localeCompare(b.name));
     if (this.inputForLine) {
       this.inputForLine.input_id = Number(input.id);
-      this.inputForLine.package_type = '';
-      this.inputForLine.content_per_package = 1;
+      this.prefill(this.inputForLine);
     }
     this.inputModalOpen = false;
     this.inputForLine = null;
@@ -225,7 +290,7 @@ export class PurchasesPage {
   }
 
   lineBase(l: Line): number {
-    return (Number(l.quantity) || 0) * (Number(l.content_per_package) || 0);
+    return (Number(l.quantity) || 0) * (this.isBaseUnit(l) ? 1 : Number(l.content_per_package) || 0);
   }
 
   lineUnitCost(l: Line): number | null {
@@ -254,7 +319,7 @@ export class PurchasesPage {
     for (const l of items) {
       const name = this.input(l.input_id)?.name ?? 'un artículo';
       if (!(Number(l.quantity) > 0)) return void (this.formError = `Indica la cantidad de ${name}`);
-      if (!(Number(l.content_per_package) > 0)) return void (this.formError = `Indica el contenido por presentación de ${name}`);
+      if (!this.isBaseUnit(l) && !(Number(l.content_per_package) > 0)) return void (this.formError = `Indica cuánto trae cada ${l.buy_unit || 'unidad'} de ${name}`);
       if (l.unit_cost === null || Number(l.unit_cost) < 0) return void (this.formError = `Indica el precio de ${name}`);
     }
     const body: any = {
@@ -264,9 +329,10 @@ export class PurchasesPage {
       payment_method_id: Number(this.form.payment_method_id),
       items: items.map(l => ({
         input_id: l.input_id,
-        package_type: String(l.package_type || '').trim() || null,
+        buy_unit: String(l.buy_unit || '').trim() || null,
+        package_type: String(l.buy_unit || '').trim() || null,
         quantity: Number(l.quantity),
-        content_per_package: Number(l.content_per_package),
+        content_per_package: this.isBaseUnit(l) ? 1 : Number(l.content_per_package),
         unit_cost: Math.round(Number(l.unit_cost) * 100) / 100,
       })),
     };
@@ -288,8 +354,8 @@ export class PurchasesPage {
         await this.api.delete('purchases/delete-ticket.php', { id });
       }
       this.formOpen = false;
-      this.ui.success(this.editingId ? 'Compra actualizada; inventario recalculado' : 'Compra registrada; inventario y costos actualizados');
-      await this.load();
+      this.ui.success(this.editingId ? 'Compra actualizada; costos recalculados' : 'Compra registrada; costos actualizados');
+      await Promise.all([this.load(), this.loadCatalogs()]);
     } catch (e) {
       this.formError = errorMessage(e, 'No se pudo guardar la compra');
     } finally {
