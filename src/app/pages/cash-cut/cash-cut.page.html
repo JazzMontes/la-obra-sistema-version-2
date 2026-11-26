@@ -60,7 +60,8 @@
             <span class="num">{{ fundAmountValue | money }}</span>
           </div>
           <div class="cut-line"><span>+ Ventas en efectivo</span><span class="num">{{ cashSales | money }}</span></div>
-          <div class="cut-line"><span>− Gastos y salidas <span class="muted small">· {{ activeExpenses.length }}</span></span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line"><span>− Gastos pagados en efectivo <span class="muted small">· {{ activeExpenses.length }}</span></span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line" *ngIf="cashMovesList.length"><span>{{ cashMoves < 0 ? '−' : '+' }} Otros movimientos de efectivo <span class="muted small">· {{ cashMovesList.length }}</span></span><span class="num">{{ cashMoves | money }}</span></div>
           <div class="cut-line total"><span>Efectivo que debe haber</span><strong class="num">{{ expectedCash | money }}</strong></div>
 
           <div class="field counted">
@@ -94,7 +95,8 @@
         <div class="card-pad">
           <div class="cut-line"><span>Total vendido</span><span class="num">{{ totalSales | money }}</span></div>
           <div class="cut-line" *ngFor="let m of nonCash"><span>− {{ m.name }}</span><span class="num">−{{ m.amount | money }}</span></div>
-          <div class="cut-line"><span>− Gastos y salidas</span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line"><span>− Gastos en efectivo</span><span class="num">−{{ expensesTotal | money }}</span></div>
+          <div class="cut-line" *ngIf="cashMovesList.length"><span>± Movimientos de efectivo</span><span class="num">{{ cashMoves | money }}</span></div>
           <div class="cut-line sub"><span>Efectivo de las ventas (sistema)</span><span class="num">{{ cashFromSales | money }}</span></div>
           <div class="cut-line sub"><span>Contado − fondo ({{ counted | money }} − {{ fundAmountValue | money }})</span><span class="num">{{ countedMinusFund | money }}</span></div>
           <p class="small note" [class.text-success]="difference === 0" [class.text-danger]="difference !== 0">
@@ -103,9 +105,65 @@
         </div>
       </section>
 
+      <!-- Reparto del día (administradores) -->
+      <section class="card reserve-card" *ngIf="isAdmin && reserve">
+        <div class="card-head">
+          <h3><app-icon name="pie"></app-icon>Reparto del día</h3>
+          <a class="link small" routerLink="/money-settings">Cambiar %</a>
+        </div>
+        <div class="card-pad">
+          <div class="cut-line"><span>Venta del día</span><span class="num">{{ reserve.total_sales | money }}</span></div>
+          <div class="cut-line"><span>− Gastos fijos</span><span class="num">−{{ reserve.fixed_total | money }}</span></div>
+          <div class="cut-line total"><span>Sobrante para repartir</span><strong class="num">{{ reserve.leftover | money }}</strong></div>
+
+          <div class="reserve-rows">
+            <div class="reserve-row" *ngFor="let it of reserve.items">
+              <div class="grow">
+                <div class="strong">{{ it.name }}</div>
+                <div class="small muted">
+                  <ng-container *ngIf="it.kind === 'fixed'">Gasto fijo{{ it.short ? ' · la venta no alcanzó para todo' : '' }}</ng-container>
+                  <ng-container *ngIf="it.kind === 'percent'">{{ it.value }} % = {{ it.exact | money }}</ng-container>
+                </div>
+              </div>
+              <div class="input-group">
+                <span class="addon">$</span>
+                <input class="input" type="number" inputmode="decimal" min="0" step="1" [(ngModel)]="reserveAmounts[it.account_id]" [attr.aria-label]="'Monto para ' + it.name" />
+              </div>
+            </div>
+          </div>
+          <div class="cut-line total"><span>Total a apartar</span><strong class="num">{{ reserveTotal | money }}</strong></div>
+          <p class="small muted">Sale de <strong>{{ reserve.source_name }}</strong> y se pasa a cada apartado. Los montos ya vienen redondeados; puedes cambiarlos.</p>
+          <div class="notice success" *ngIf="reserve.saved">
+            <app-icon name="check"></app-icon>
+            <span>Guardado {{ (reserve.saved.updated_at || reserve.saved.created_at) | dateMx: 'datetime' }} por {{ reserve.saved.user_name }}</span>
+          </div>
+          <div class="reserve-actions">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="useSuggested()">Usar sugeridos</button>
+            <span class="grow"></span>
+            <button type="button" class="btn btn-primary" (click)="saveReserve()" [disabled]="savingReserve || !reserve.items.length">
+              {{ savingReserve ? 'Guardando…' : reserve.saved ? 'Volver a guardar' : 'Guardar apartados' }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Otros movimientos de efectivo -->
+      <section class="card" *ngIf="cashMovesList.length">
+        <div class="card-head"><h3>Otros movimientos de efectivo</h3><a class="link small" routerLink="/money" *ngIf="isAdmin">Ver dinero</a></div>
+        <div class="list">
+          <div class="list-row" *ngFor="let m of cashMovesList">
+            <div class="grow">
+              <div class="title">{{ m.reason }}</div>
+              <div class="sub">{{ m.created_at | dateMx: 'time' }} · {{ m.user_name }}</div>
+            </div>
+            <div class="end strong num" [class.text-success]="m.amount > 0">{{ m.amount > 0 ? '+' : '' }}{{ m.amount | money }}</div>
+          </div>
+        </div>
+      </section>
+
       <!-- Detalle de gastos -->
       <section class="card" *ngIf="activeExpenses.length">
-        <div class="card-head"><h3>Gastos y salidas</h3><a class="link small" routerLink="/expenses">Ver gastos</a></div>
+        <div class="card-head"><h3>Gastos pagados en efectivo</h3><a class="link small" routerLink="/expenses">Ver gastos</a></div>
         <div class="list">
           <div class="list-row" *ngFor="let e of activeExpenses">
             <div class="grow">

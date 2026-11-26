@@ -110,3 +110,46 @@
     display: none !important;
   }
 }
+
+// Reparto del día
+.reserve-card {
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    app-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--brand-ink);
+    }
+  }
+}
+
+.reserve-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--brand-soft);
+}
+
+.reserve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .input-group {
+    width: 120px;
+    flex-shrink: 0;
+  }
+}
+
+.reserve-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}

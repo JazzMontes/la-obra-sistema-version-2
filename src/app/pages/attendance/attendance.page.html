@@ -74,7 +74,7 @@
     </div>
 
     <!-- 3. Coordenadas y mapa -->
-    <div class="card block-gap" *ngIf="reading || locating">
+    <div class="card block-gap" *ngIf="tech && (reading || locating)">
       <div class="card-head">
         <div class="row">
           <h3>Tu ubicación</h3>
@@ -139,7 +139,7 @@
     </div>
 
     <!-- Mapa del negocio mientras no hay lectura del GPS -->
-    <div class="card card-pad block-gap" *ngIf="location && !reading && !locating && showMap">
+    <div class="card card-pad block-gap" *ngIf="tech && location && !reading && !locating && showMap">
       <figure class="street">
         <app-street-map [center]="location" [radius]="location.radius_m" [label]="location.name" [height]="240"></app-street-map>
         <figcaption class="small muted">
@@ -150,7 +150,7 @@
     </div>
 
     <!-- 4. Reglas de contexto: qué ve la app ahora y qué reglas se cumplen -->
-    <div class="card block-gap ctx-card" *ngIf="location">
+    <div class="card block-gap ctx-card" *ngIf="tech && location">
       <div class="card-head">
         <div class="row">
           <h3>Reglas de contexto</h3>
@@ -231,7 +231,7 @@
         <app-icon [name]="decision.tono === 'success' ? 'check' : decision.tono === 'info' ? 'info' : 'alert'"></app-icon>
         <div class="grow">
           {{ decision.mensaje }}
-          <span class="small" *ngIf="decision.reglas.length"> ({{ decision.reglas.join(' + ') }})</span>
+          <span class="small" *ngIf="tech && decision.reglas.length"> ({{ decision.reglas.join(' + ') }})</span>
           <div *ngIf="decision.mostrarComoLlegar && reading">
             <a class="link" [href]="directionsUrl(reading.latitude, reading.longitude)" target="_blank" rel="noopener">Cómo llegar al negocio</a>
           </div>

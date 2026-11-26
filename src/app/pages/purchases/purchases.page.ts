@@ -52,6 +52,8 @@ export class PurchasesPage {
   editingId: number | null = null;
   form: any = {};
   lines: Line[] = [];
+  // Formas de pago: una (todo el total) o varias con su monto (ej. tarjeta $300 + efectivo $200)
+  payments: { payment_method_id: number | null; amount: number | null }[] = [];
   ticket: string | null = null;      // vista previa
   newTicket: string | null | undefined = undefined; // undefined = sin cambios, null = quitar
   saving = false;
@@ -120,9 +122,9 @@ export class PurchasesPage {
       purchase_date: todayIso(),
       supplier: '',
       buyer: this.auth.getStoredUser()?.name ?? '',
-      payment_method_id: this.methods[0]?.id ?? null,
       change_reason: '',
     };
+    this.payments = [{ payment_method_id: this.methods[0]?.id ?? null, amount: null }];
     this.lines = [this.emptyLine()];
     this.ticket = null;
     this.newTicket = undefined;
@@ -139,9 +141,10 @@ export class PurchasesPage {
         purchase_date: full.purchase_date,
         supplier: full.supplier ?? '',
         buyer: full.buyer ?? '',
-        payment_method_id: full.payment_method_id,
         change_reason: '',
       };
+      const pays = (full.payments ?? []).map((x: any) => ({ payment_method_id: Number(x.payment_method_id), amount: Number(x.amount) }));
+      this.payments = pays.length ? pays : [{ payment_method_id: full.payment_method_id, amount: null }];
       this.lines = full.items.map((i: any) => ({
         input_id: Number(i.input_id),
         buy_unit: i.buy_unit || (Number(i.content_per_package) === 1 ? i.unit : this.packLabel(this.input(Number(i.input_id)))) || i.unit,
@@ -302,6 +305,47 @@ export class PurchasesPage {
     return this.lines.reduce((s, l) => s + this.lineTotal(l), 0);
   }
 
+  // ---------- Formas de pago ----------
+  splitPayment() {
+    const first = this.payments[0];
+    const other = this.methods.find(m => m.id !== first.payment_method_id)?.id ?? first.payment_method_id;
+    first.amount = Math.round(this.total * 100) / 100;
+    this.payments = [first, { payment_method_id: other, amount: 0 }];
+  }
+
+  addPayment() {
+    this.payments = [...this.payments, { payment_method_id: this.methods[0]?.id ?? null, amount: null }];
+  }
+
+  removePayment(i: number) {
+    this.payments = this.payments.filter((_, k) => k !== i);
+    if (this.payments.length === 1) this.payments[0].amount = null;
+  }
+
+  get paid(): number {
+    return Math.round(this.payments.reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100;
+  }
+
+  // Lo que falta (positivo) o sobra (negativo) para llegar al total
+  get payLeft(): number {
+    return this.payments.length > 1 ? Math.round((this.total - this.paid) * 100) / 100 : 0;
+  }
+
+  fillRest(i: number) {
+    const others = this.payments.reduce((s, p, k) => s + (k === i ? 0 : Number(p.amount) || 0), 0);
+    this.payments[i].amount = Math.max(0, Math.round((this.total - others) * 100) / 100);
+  }
+
+  // "Tarjeta $300 · Efectivo $200" o solo "Efectivo"
+  payLabel(p: any): string {
+    const list = p?.payments ?? [];
+    if (list.length > 1) {
+      const f = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+      return list.map((x: any) => `${x.name} ${f.format(Number(x.amount))}`).join(' · ');
+    }
+    return list[0]?.name ?? p?.payment_method ?? '';
+  }
+
   onTicket(value: string | null) {
     this.newTicket = value;
     this.ticket = value;
@@ -312,8 +356,11 @@ export class PurchasesPage {
     this.formError = '';
     const items = this.lines.filter(l => l.input_id);
     if (!this.form.purchase_date) return void (this.formError = 'Indica la fecha de la compra');
-    if (!this.form.payment_method_id) return void (this.formError = 'Elige el método de pago');
+    if (this.payments.some(p => !p.payment_method_id)) return void (this.formError = 'Elige la forma de pago');
     if (!items.length) return void (this.formError = 'Agrega al menos un artículo');
+    if (this.payments.length > 1 && this.payLeft !== 0) {
+      return void (this.formError = this.payLeft > 0 ? `Faltan ${this.payLeft.toFixed(2)} pesos por repartir entre las formas de pago` : `Las formas de pago suman ${(-this.payLeft).toFixed(2)} pesos de más`);
+    }
     const ids = items.map(l => l.input_id);
     if (new Set(ids).size !== ids.length) return void (this.formError = 'Hay un insumo repetido; junta las cantidades en un solo renglón');
     for (const l of items) {
@@ -326,7 +373,10 @@ export class PurchasesPage {
       purchase_date: this.form.purchase_date,
       supplier: String(this.form.supplier || '').trim() || null,
       buyer: String(this.form.buyer || '').trim() || null,
-      payment_method_id: Number(this.form.payment_method_id),
+      payment_method_id: Number(this.payments[0].payment_method_id),
+      payments: this.payments.length > 1
+        ? this.payments.filter(p => Number(p.amount) > 0).map(p => ({ payment_method_id: Number(p.payment_method_id), amount: Math.round(Number(p.amount) * 100) / 100 }))
+        : [{ payment_method_id: Number(this.payments[0].payment_method_id), amount: Math.round(this.total * 100) / 100 }],
       items: items.map(l => ({
         input_id: l.input_id,
         buy_unit: String(l.buy_unit || '').trim() || null,

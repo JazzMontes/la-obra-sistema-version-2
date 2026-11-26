@@ -47,7 +47,7 @@
           <div class="grow">
             <div class="title">{{ p.supplier || 'Sin proveedor' }}</div>
             <div class="sub">
-              {{ p.payment_method }}<span *ngIf="p.buyer"> · compró {{ p.buyer }}</span>
+              {{ payLabel(p) }}<span *ngIf="p.buyer"> · compró {{ p.buyer }}</span>
             </div>
           </div>
           <app-icon name="receipt" class="faint" *ngIf="p.ticket_path" title="Con ticket"></app-icon>
@@ -79,7 +79,7 @@
         <div class="facts">
           <div><span>Proveedor</span><strong>{{ d.supplier || '—' }}</strong></div>
           <div><span>Compró</span><strong>{{ d.buyer || '—' }}</strong></div>
-          <div><span>Pago</span><strong>{{ d.payment_method }}</strong></div>
+          <div><span>Pago</span><strong>{{ payLabel(d) }}</strong></div>
           <div><span>Registró</span><strong>{{ d.user_name }}</strong></div>
         </div>
 
@@ -156,12 +156,6 @@
             <input id="f-date" class="input" type="date" [(ngModel)]="form.purchase_date" />
           </div>
           <div class="field">
-            <label for="f-pm">Método de pago</label>
-            <select id="f-pm" class="select" [(ngModel)]="form.payment_method_id">
-              <option *ngFor="let m of methods" [ngValue]="m.id">{{ m.name }}</option>
-            </select>
-          </div>
-          <div class="field">
             <label for="f-sup">Proveedor</label>
             <input id="f-sup" class="input" [(ngModel)]="form.supplier" list="suppliers" placeholder="Ej. Costco, Mercado" maxlength="150" />
             <datalist id="suppliers"><option *ngFor="let s of suppliers" [value]="s"></option></datalist>
@@ -232,6 +226,32 @@
             </div>
           </div>
           <button class="btn btn-block add-line" type="button" (click)="addLine()"><app-icon name="plus"></app-icon>Agregar artículo</button>
+        </div>
+
+        <div class="section-title">
+          <h2>¿Cómo pagaste?</h2>
+          <button type="button" class="btn btn-sm" *ngIf="payments.length === 1" (click)="splitPayment()"><app-icon name="plus"></app-icon>Pagué con dos formas</button>
+        </div>
+        <div class="card pay-box">
+          <div class="pay-row" *ngFor="let p of payments; let i = index">
+            <select class="select" [(ngModel)]="p.payment_method_id" [attr.aria-label]="'Forma de pago ' + (i + 1)">
+              <option *ngFor="let m of methods" [ngValue]="m.id">{{ m.name }}</option>
+            </select>
+            <div class="input-group" *ngIf="payments.length > 1">
+              <span class="addon">$</span>
+              <input class="input" type="number" inputmode="decimal" min="0" step="0.01" [(ngModel)]="p.amount" [attr.aria-label]="'Monto ' + (i + 1)" />
+            </div>
+            <strong class="num pay-all" *ngIf="payments.length === 1">{{ total | money }}</strong>
+            <button type="button" class="btn btn-ghost btn-sm" *ngIf="payments.length > 1 && payLeft !== 0" (click)="fillRest(i)">El resto</button>
+            <button type="button" class="btn btn-ghost btn-icon" *ngIf="payments.length > 1" (click)="removePayment(i)" aria-label="Quitar forma de pago"><app-icon name="close"></app-icon></button>
+          </div>
+          <div class="pay-foot" *ngIf="payments.length > 1">
+            <button type="button" class="btn btn-ghost btn-sm" (click)="addPayment()"><app-icon name="plus"></app-icon>Otra forma</button>
+            <span class="grow"></span>
+            <span class="small" [class.text-success]="payLeft === 0" [class.text-danger]="payLeft !== 0">
+              {{ payLeft === 0 ? 'Cuadra con el total' : payLeft > 0 ? 'Faltan ' : 'Sobran ' }}<strong *ngIf="payLeft !== 0">{{ (payLeft < 0 ? -payLeft : payLeft) | money }}</strong>
+            </span>
+          </div>
         </div>
 
         <div class="section-title"><h2>Foto del ticket</h2><span class="small muted">Opcional</span></div>

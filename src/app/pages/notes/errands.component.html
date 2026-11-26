@@ -1,0 +1,202 @@
+<div class="errands-top">
+  <div class="segmented">
+    <button type="button" [class.active]="status === 'open'" (click)="setStatus('open')">Por cerrar</button>
+    <button type="button" [class.active]="status === 'closed'" (click)="setStatus('closed')">Cerrados</button>
+  </div>
+  <button class="btn btn-primary" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nuevo encargo</button>
+</div>
+
+<ng-container *ngIf="loading">
+  <div class="card"><div class="skeleton" *ngFor="let i of [1, 2]"></div></div>
+</ng-container>
+
+<ng-container *ngIf="!loading">
+  <article class="card errand" *ngFor="let e of errands" [class.closed]="e.status !== 'open'">
+    <header class="errand-head" (click)="openEdit(e)" [class.clickable]="e.status === 'open'">
+      <div class="who">
+        <span class="avatar avatar-sm"><app-icon name="bag"></app-icon></span>
+        <div>
+          <div class="title">{{ e.person }}<span class="muted" *ngIf="e.place"> · {{ e.place }}</span></div>
+          <div class="sub">{{ e.created_at | dateMx: 'datetime' }} · de {{ e.account_name }}</div>
+        </div>
+      </div>
+      <span class="badge" *ngIf="e.status === 'cancelled'">Cancelado</span>
+    </header>
+
+    <ul class="items">
+      <li *ngFor="let i of e.items">
+        <span class="grow">{{ i.name }}<span class="muted" *ngIf="i.qty || i.unit"> · {{ qtyLabel(i) }}</span></span>
+        <span class="num muted" *ngIf="i.estimate !== null && i.estimate !== undefined">≈ {{ i.estimate | money }}</span>
+        <span class="num strong" *ngIf="e.status === 'closed' && i.real !== null && i.real !== undefined">{{ i.real | money }}</span>
+      </li>
+    </ul>
+
+    <div class="totals">
+      <div><span>Estimado</span><strong class="num">{{ e.estimate_total | money }}</strong></div>
+      <div><span>Se le dio</span><strong class="num">{{ e.given | money }}</strong></div>
+      <div *ngIf="e.status === 'closed'"><span>Gastó</span><strong class="num">{{ e.spent | money }}</strong></div>
+    </div>
+
+    <div class="result" *ngIf="e.status === 'closed'" [class.owe]="e.change < 0" [class.back]="e.change > 0">
+      <app-icon [name]="e.change < 0 ? 'alert' : 'check'"></app-icon>
+      <span *ngIf="e.change > 0">Devolvió {{ e.change | money }} de cambio</span>
+      <span *ngIf="e.change < 0">Puso {{ abs(e.change) | money }} de su dinero: se le repuso</span>
+      <span *ngIf="e.change === 0">Salió exacto</span>
+    </div>
+
+    <footer class="errand-foot">
+      <ng-container *ngIf="e.status === 'open'">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="openEdit(e)"><app-icon name="edit"></app-icon>Editar</button>
+        <span class="grow"></span>
+        <button type="button" class="btn btn-primary" (click)="openClose(e)"><app-icon name="check"></app-icon>Ya regresó</button>
+      </ng-container>
+      <ng-container *ngIf="e.status === 'closed'">
+        <span class="small muted grow">Cerrado {{ e.closed_at | dateMx: 'datetime' }}<span *ngIf="e.closed_by_name"> por {{ e.closed_by_name }}</span></span>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="reopen(e)">Abrir de nuevo</button>
+      </ng-container>
+    </footer>
+  </article>
+
+  <div class="empty card" *ngIf="!errands.length">
+    <app-icon name="bag"></app-icon>
+    <h3>{{ status === 'open' ? 'Ningún encargo pendiente' : 'Sin encargos cerrados' }}</h3>
+    <p>Anota quién va a comprar, qué trae y cuánto se le da. Al regresar, la app te dice si te devuelve o si hay que reponerle.</p>
+    <button class="btn btn-primary btn-sm" type="button" (click)="openNew()" *ngIf="status === 'open'">Nuevo encargo</button>
+  </div>
+</ng-container>
+
+<!-- Nuevo / editar encargo -->
+<ion-modal class="sheet" [isOpen]="open" (didDismiss)="open = false">
+  <ng-template>
+    <div class="modal-shell">
+      <div class="modal-head">
+        <h2>{{ form.id ? 'Editar encargo' : 'Nuevo encargo' }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="grid-2">
+          <div class="field">
+            <label for="er-person">¿Quién va?</label>
+            <input id="er-person" class="input" [(ngModel)]="form.person" maxlength="100" placeholder="Ej. Erick" />
+          </div>
+          <div class="field">
+            <label for="er-place">¿A dónde?</label>
+            <input id="er-place" class="input" [(ngModel)]="form.place" maxlength="150" placeholder="Ej. Mercado, Costco" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>¿Qué va a comprar?</label>
+          <div class="item-grid head small muted">
+            <span>Artículo</span><span>Cantidad</span><span>Unidad</span><span>≈ Costo total</span><span></span>
+          </div>
+          <div class="item-grid" *ngFor="let it of form.items; let i = index">
+            <input class="input" [(ngModel)]="it.name" (input)="touchItem(i)" (blur)="suggestUnit(it)" maxlength="120" placeholder="Ej. Pan" [attr.aria-label]="'Artículo ' + (i + 1)" />
+            <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="it.qty" placeholder="Cant." [attr.aria-label]="'Cantidad ' + (i + 1)" />
+            <input class="input" [(ngModel)]="it.unit" list="buy-units" maxlength="20" placeholder="Unidad" [attr.aria-label]="'Unidad ' + (i + 1)" />
+            <div class="cost-cell">
+              <div class="input-group">
+                <span class="addon">$</span>
+                <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="it.estimate" [attr.aria-label]="'Costo estimado ' + (i + 1)" />
+              </div>
+              <span class="per-unit" *ngIf="perUnit(it) as pu">≈ {{ pu | money }} c/{{ it.unit || 'u' }}</span>
+            </div>
+            <button type="button" class="btn btn-ghost btn-icon" (click)="removeItem(i)" aria-label="Quitar"><app-icon name="close"></app-icon></button>
+          </div>
+          <datalist id="buy-units">
+            <option *ngFor="let u of units" [value]="u"></option>
+          </datalist>
+          <button type="button" class="btn btn-sm add-item" (click)="addItem()"><app-icon name="plus"></app-icon>Agregar artículo</button>
+        </div>
+
+        <div class="est-box">
+          <span>Total estimado</span>
+          <strong class="num">{{ estimate | money }}</strong>
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="er-given">¿Cuánto se le da?</label>
+            <div class="input-group">
+              <span class="addon">$</span>
+              <input id="er-given" class="input big-input" type="number" inputmode="decimal" min="0" step="1" [(ngModel)]="form.given" />
+            </div>
+            <div class="chips">
+              <button type="button" *ngIf="suggestedGive" (click)="form.given = suggestedGive">{{ suggestedGive | money }}</button>
+              <button type="button" *ngFor="let g of quickGive" (click)="form.given = g">{{ g | money }}</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="er-acc">¿De dónde sale?</label>
+            <select id="er-acc" class="select" [(ngModel)]="form.account_id">
+              <option *ngFor="let a of accounts" [ngValue]="a.id">{{ a.name }}</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="er-note">Nota</label>
+          <input id="er-note" class="input" [(ngModel)]="form.note" maxlength="255" placeholder="Opcional" />
+        </div>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-danger-ghost" type="button" *ngIf="form.id" (click)="cancel(form)">No se hizo</button>
+        <span class="grow"></span>
+        <button class="btn btn-primary" type="button" (click)="save()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Guardar' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
+
+<!-- Ya regresó: cerrar encargo -->
+<ion-modal class="sheet" [isOpen]="!!closing" (didDismiss)="closing = null">
+  <ng-template>
+    <div class="modal-shell" *ngIf="closing as e">
+      <div class="modal-head">
+        <h2>Regresó {{ e.person }}</h2>
+        <button class="btn btn-ghost btn-icon" type="button" (click)="closing = null" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
+      </div>
+      <div class="modal-body stack">
+        <div class="segmented block">
+          <button type="button" [class.active]="close.useItems" (click)="close.useItems = true">Precio por artículo</button>
+          <button type="button" [class.active]="!close.useItems" (click)="close.useItems = false">Solo el total</button>
+        </div>
+
+        <div *ngIf="close.useItems" class="stack-sm">
+          <div class="real-row" *ngFor="let it of close.items; let i = index">
+            <span class="grow">{{ it.name }}<span class="muted small" *ngIf="it.qty || it.unit"> · {{ qtyLabel(it) }}</span><span class="muted small" *ngIf="it.estimate !== null && it.estimate !== undefined"> · calculado {{ it.estimate | money }}</span></span>
+            <div class="input-group">
+              <span class="addon">$</span>
+              <input class="input" type="number" inputmode="decimal" min="0" step="0.5" [(ngModel)]="it.real" [attr.aria-label]="'Costó ' + it.name" />
+            </div>
+          </div>
+        </div>
+
+        <div class="field" *ngIf="!close.useItems">
+          <label for="cl-spent">¿Cuánto gastó en total?</label>
+          <div class="input-group">
+            <span class="addon">$</span>
+            <input id="cl-spent" class="input big-input" type="number" inputmode="decimal" min="0" step="0.5" [(ngModel)]="close.spent" />
+          </div>
+        </div>
+
+        <div class="close-sum">
+          <div><span>Se le dio</span><strong class="num">{{ e.given | money }}</strong></div>
+          <div><span>Gastó</span><strong class="num">{{ spent | money }}</strong></div>
+        </div>
+        <div class="result big" [class.owe]="change < 0" [class.back]="change > 0">
+          <app-icon [name]="change < 0 ? 'alert' : 'check'"></app-icon>
+          <span *ngIf="change > 0">Te devuelve <strong>{{ change | money }}</strong></span>
+          <span *ngIf="change < 0">Le faltaron <strong>{{ abs(change) | money }}</strong>: hay que reponérselos de {{ e.account_name }}</span>
+          <span *ngIf="change === 0">Salió exacto</span>
+        </div>
+        <p class="small muted">Lo gastado queda como gasto en {{ e.account_name }}. Si te equivocas, lo puedes abrir de nuevo.</p>
+        <div class="form-error" *ngIf="formError">{{ formError }}</div>
+      </div>
+      <div class="modal-foot">
+        <span class="grow"></span>
+        <button class="btn btn-primary" type="button" (click)="saveClose()" [disabled]="saving">{{ saving ? 'Guardando…' : 'Cerrar encargo' }}</button>
+      </div>
+    </div>
+  </ng-template>
+</ion-modal>
