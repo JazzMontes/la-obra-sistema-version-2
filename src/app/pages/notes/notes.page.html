@@ -1,8 +1,8 @@
 <ion-header class="app-header">
   <ion-toolbar>
     <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
-    <ion-title>{{ view === 'errands' ? 'Encargos' : 'Notas' }}</ion-title>
-    <ion-buttons slot="end" *ngIf="view === 'notes'">
+    <ion-title>Notas</ion-title>
+    <ion-buttons slot="end">
       <button class="btn btn-primary btn-sm" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nueva</button>
     </ion-buttons>
     <ion-buttons slot="end"><app-network-button></app-network-button></ion-buttons>
@@ -11,14 +11,6 @@
 
 <ion-content>
   <div class="page page-narrow">
-    <div class="segmented block view-tabs">
-      <button type="button" [class.active]="view === 'errands'" (click)="view = 'errands'"><app-icon name="bag"></app-icon>Encargos de compra</button>
-      <button type="button" [class.active]="view === 'notes'" (click)="view = 'notes'"><app-icon name="notes"></app-icon>Notas y pendientes</button>
-    </div>
-
-    <app-errands *ngIf="view === 'errands'"></app-errands>
-
-    <ng-container *ngIf="view === 'notes'">
     <div class="page-intro">
       <div>
         <h1>Notas y pendientes</h1>
@@ -110,7 +102,6 @@
         <p>Aquí aparecerá lo que ya se compró o se hizo.</p>
       </div>
     </div>
-    </ng-container>
   </div>
 </ion-content>
 

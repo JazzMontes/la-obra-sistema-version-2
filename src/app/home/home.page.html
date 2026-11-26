@@ -19,8 +19,7 @@
       </div>
       <div class="row wrap">
         <a class="btn" routerLink="/purchases" *ngIf="isAdmin"><app-icon name="purchases"></app-icon>Registrar compra</a>
-        <a class="btn" routerLink="/notes" [queryParams]="{ tab: 'errands' }"><app-icon name="bag"></app-icon>Encargo</a>
-        <a class="btn" routerLink="/money" *ngIf="isAdmin"><app-icon name="wallet"></app-icon>Dinero</a>
+        <a class="btn" routerLink="/notes"><app-icon name="notes"></app-icon>Notas</a>
         <a class="btn btn-primary" routerLink="/pos"><app-icon name="pos"></app-icon>Nueva venta</a>
       </div>
     </div>
@@ -29,6 +28,13 @@
       <app-icon name="alert"></app-icon>
       <div class="grow">{{ error }}</div>
       <button class="link" type="button" (click)="load()">Reintentar</button>
+    </div>
+
+    <!-- Plan del negocio -->
+    <div class="notice" [class.danger]="n.danger" [class.warning]="!n.danger" *ngIf="planNotice as n">
+      <app-icon [name]="n.danger ? 'lock' : 'clock'"></app-icon>
+      <div class="grow">{{ n.text }}</div>
+      <a class="link" routerLink="/billing">{{ isAdmin ? 'Ver planes' : 'Ver plan' }}</a>
     </div>
 
     <!-- Indicadores del día -->

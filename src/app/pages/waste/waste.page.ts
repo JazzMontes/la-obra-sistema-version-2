@@ -22,8 +22,7 @@ export class WastePage {
   private readonly memo = new Memo();
   private readonly refresher = autoRefresh();
 
-  // Lo que pasa de verdad en el puesto: no todo se registra a tiempo y no siempre se sabe qué pasó
-  readonly classifications = ['Se dio de más o se regaló', 'Se usó y no se registró', 'Se cayó o derramó', 'Se echó a perder', 'Mal preparado', 'Devolución del cliente', 'Sobrante del día', 'No sé qué pasó'];
+  readonly classifications = ['Caducado', 'Se cayó o derramó', 'Mal preparado', 'Devolución del cliente', 'Sobrante del día', 'Otro'];
   readonly kinds: { key: Kind; label: string }[] = [
     { key: 'input', label: 'Insumo' },
     { key: 'preparation', label: 'Preparación' },
@@ -153,6 +152,7 @@ export class WastePage {
     if (!f.affected_id) return void (this.formError = 'Elige qué se perdió');
     if (!(Number(f.quantity) > 0)) return void (this.formError = 'Indica la cantidad');
     if (!f.classification) return void (this.formError = 'Elige una clasificación');
+    if (!String(f.reason || '').trim()) return void (this.formError = 'Describe brevemente lo que pasó');
     this.saving = true;
     try {
       const r = await this.api.post('waste/create.php', {
@@ -162,8 +162,7 @@ export class WastePage {
         is_approximate: !!f.is_approximate,
         waste_date: f.waste_date,
         classification: f.classification,
-        // El detalle es opcional: si no se escribe, se usa la clasificación
-        reason: String(f.reason || '').trim() || f.classification,
+        reason: String(f.reason).trim(),
       });
       const cost = r.waste?.estimated_total_cost;
       this.open = false;

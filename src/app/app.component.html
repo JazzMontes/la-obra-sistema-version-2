@@ -12,27 +12,29 @@
         </div>
 
         <nav class="nav">
-          <div class="nav-group" *ngFor="let g of groups" [class.nav-school]="g.school">
-            <button type="button" class="nav-title nav-fold" *ngIf="g.school" (click)="schoolOpen = !schoolVisible" [attr.aria-expanded]="schoolVisible">
-              <span>{{ g.title }}</span>
-              <app-icon name="chevron" [class.open]="schoolVisible"></app-icon>
+          <div class="nav-group" *ngFor="let g of groups">
+            <div class="nav-title" *ngIf="g.title">{{ g.title }}</div>
+            <button
+              type="button"
+              class="nav-item"
+              *ngFor="let item of g.items"
+              [class.active]="isActive(item.url)"
+              [class.locked]="item.locked"
+              [attr.title]="item.locked ? 'No incluido en el plan del negocio' : null"
+              (click)="go(item.url, item)"
+            >
+              <app-icon [name]="item.icon"></app-icon>
+              <span>{{ item.label }}</span>
+              <span class="nav-badge" *ngIf="item.url === '/notes' && reminders.mine" [attr.aria-label]="reminders.mine + ' pendientes para ti'">{{ reminders.mine }}</span>
+              <app-icon class="nav-lock" name="lock" *ngIf="item.locked"></app-icon>
             </button>
-            <div class="nav-title" *ngIf="g.title && !g.school">{{ g.title }}</div>
-            <ng-container *ngIf="!g.school || schoolVisible">
-              <button
-                type="button"
-                class="nav-item"
-                *ngFor="let item of g.items"
-                [class.active]="isActive(item.url)"
-                (click)="go(item.url)"
-              >
-                <app-icon [name]="item.icon"></app-icon>
-                <span>{{ item.label }}</span>
-                <span class="nav-badge" *ngIf="item.url === '/notes' && reminders.mine" [attr.aria-label]="reminders.mine + ' pendientes para ti'">{{ reminders.mine }}</span>
-              </button>
-            </ng-container>
           </div>
         </nav>
+
+        <button type="button" class="plan-chip" *ngIf="planLabel" [class.warn]="planWarning" (click)="go('/billing')">
+          <app-icon name="star"></app-icon>
+          <span>{{ planLabel }}</span>
+        </button>
 
         <div class="menu-user">
           <button type="button" class="user-chip" (click)="go('/profile')">

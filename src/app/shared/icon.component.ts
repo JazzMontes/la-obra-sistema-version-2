@@ -66,14 +66,6 @@ const ICONS: Record<string, string> = {
   layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
   pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
   target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
-  wallet: '<path d="M4 7a2 2 0 0 1 2-2h12v4"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 13.5h2"/>',
-  piggy: '<path d="M5 11a7 6 0 0 1 12-3l3-1v4l1 1v3h-2a7 6 0 0 1-3 3v2h-3v-1.5a8 8 0 0 1-2 0V20H8v-2.5A6 6 0 0 1 5 11z"/><path d="M15 11h0M10 7h3"/>',
-  swap: '<path d="M4 8h14l-3-3M20 16H6l3 3"/>',
-  hand: '<path d="M2 14h3l4-2 5 1a1.5 1.5 0 0 1 0 3h-3"/><path d="M5 20h9l7-5a1.7 1.7 0 0 0-2.3-2.4L14 15"/><circle cx="15" cy="6" r="3"/>',
-  bag: '<path d="M5 8h14l-1 13H6z"/><path d="M9 11V6a3 3 0 0 1 6 0v5"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
-  pie: '<path d="M12 3v9h9a9 9 0 1 1-9-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
-  sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
 };
 

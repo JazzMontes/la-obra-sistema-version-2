@@ -1,7 +1,6 @@
 // Notas del equipo: qué va a comprar cada quien, pendientes ("pedir el pan") y recordatorios.
 // Los avisos los da services/reminders.ts (en la app y como notificación del dispositivo).
-import { ChangeDetectionStrategy, Component, OnDestroy, ViewChild } from '@angular/core';
-import { ErrandsComponent } from './errands.component';
+import { ChangeDetectionStrategy, Component, OnDestroy } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { Auth } from '../../services/auth';
@@ -47,9 +46,6 @@ export class NotesPage implements OnDestroy {
   private readonly memo = new Memo();
   private readonly refresher = autoRefresh();
 
-  // Encargos de compra (dinero entregado y su cambio) o notas y pendientes
-  view: 'errands' | 'notes' = 'errands';
-  @ViewChild(ErrandsComponent) errandsPanel?: ErrandsComponent;
   status: 'pending' | 'done' = 'pending';
   notes: any[] = [];
   people: { id: number; name: string }[] = [];
@@ -84,10 +80,7 @@ export class NotesPage implements OnDestroy {
   }
 
   ionViewWillEnter() {
-    if (/[?&]tab=errands/.test(location.hash || '')) this.view = 'errands';
-    else if (/[?&]tab=notes/.test(location.hash || '')) this.view = 'notes';
     this.visible = true;
-    void this.errandsPanel?.load();
     void this.reminders.readPermission();
     void this.load();
   }

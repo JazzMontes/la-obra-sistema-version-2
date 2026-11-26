@@ -3,11 +3,11 @@
 ion-split-pane {
   --side-width: 260px;
   --side-max-width: 260px;
-  --border: 0;
+  --border: 1px solid var(--border);
 }
 
 .side-menu {
-  --background: #141416;
+  --background: var(--surface);
   --width: 280px;
 }
 
@@ -15,8 +15,7 @@ ion-split-pane {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #141416;
-  color: #f4f2ec;
+  background: var(--surface);
   padding-top: var(--ion-safe-area-top, 0px);
 }
 
@@ -24,16 +23,15 @@ ion-split-pane {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 22px 18px 16px;
+  padding: 18px 18px 14px;
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
   background: var(--brand);
-  color: #141416;
-  box-shadow: 0 6px 18px rgba(255, 197, 38, 0.28);
+  color: var(--ink);
   display: grid;
   place-items: center;
   font-weight: 800;
@@ -43,15 +41,13 @@ ion-split-pane {
 
 .brand-name {
   font-weight: 750;
-  font-size: 17px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: #fff;
+  font-size: 16px;
+  letter-spacing: -0.01em;
 }
 
 .brand-sub {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 .nav {
@@ -69,32 +65,8 @@ ion-split-pane {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.38);
+  color: var(--faint);
   padding: 12px 10px 6px;
-}
-
-.nav-school {
-  margin-top: 10px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.12);
-}
-
-.nav-fold {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  cursor: pointer;
-
-  app-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .open {
-    transform: rotate(90deg);
-  }
 }
 
 .nav-item {
@@ -107,7 +79,7 @@ ion-split-pane {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--text-2);
   font: inherit;
   font-size: 14px;
   font-weight: 550;
@@ -117,21 +89,20 @@ ion-split-pane {
   app-icon {
     width: 19px;
     height: 19px;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--muted);
   }
 
   &:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: #fff;
+    background: var(--surface-3);
   }
 
   &.active {
-    background: var(--brand);
-    color: #141416;
-    font-weight: 700;
+    background: var(--brand-soft);
+    color: var(--ink);
+    font-weight: 650;
 
     app-icon {
-      color: #141416;
+      color: var(--brand-ink);
     }
   }
 }
@@ -151,16 +122,56 @@ ion-split-pane {
   place-items: center;
 }
 
+// Funciones que el plan del negocio no tiene vigentes
+.nav-item.locked {
+  color: var(--muted);
+
+  > span {
+    flex: 1;
+  }
+
+  .nav-lock {
+    width: 15px;
+    height: 15px;
+  }
+}
+
+// Plan y créditos del negocio
+.plan-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+
+  app-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  &.warn {
+    background: var(--warning-soft);
+    border-color: transparent;
+    color: #7a4900;
+  }
+}
+
 .menu-user {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 10px 10px calc(10px + var(--ion-safe-area-bottom, 0px));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-
-  .btn-ghost {
-    color: rgba(255, 255, 255, 0.6);
-  }
+  border-top: 1px solid var(--border);
 }
 
 .user-chip {
@@ -178,12 +189,12 @@ ion-split-pane {
   cursor: pointer;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: var(--surface-3);
   }
 
   .avatar {
-    background: var(--brand);
-    color: #141416;
+    background: var(--ink);
+    color: #fff;
     border: 0;
   }
 }
@@ -199,12 +210,11 @@ ion-split-pane {
 .user-name {
   font-weight: 650;
   font-size: 14px;
-  color: #fff;
 }
 
 .user-role {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
 }
 
 // Barra sin conexión

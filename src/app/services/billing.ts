@@ -134,14 +134,37 @@ export class BillingService {
     return this.inFlight;
   }
 
-  // Planes y créditos quedan solo como pantalla de muestra (trabajo de la escuela):
-  // ninguna función se bloquea. El servidor tampoco bloquea (supabase/15_dinero_reparto_encargos.sql).
-  isActive(_feature: string | undefined | null): boolean {
-    return true;
+  // ¿El negocio puede usar esta función ahora? Sin estado conocido no se bloquea en la app:
+  // el servidor de todos modos lo revisa en cada petición.
+  isActive(feature: string | undefined | null): boolean {
+    if (!feature) return true;
+    const s = this.status;
+    if (!s) return true;
+    const f = s.features.find(x => x.key === feature);
+    if (!f) return true;
+    if (this.inFreePlan(s, f.key)) return true;
+    if (f.in_plan) return this.planStillValid(s);
+    return !!f.unlocked_until && !this.passed(f.unlocked_until);
   }
 
   feature(key: string): BillingFeature | undefined {
     return this.status?.features.find(f => f.key === key);
+  }
+
+  // Lo que incluye el Plan gratuito nunca vence
+  private inFreePlan(s: BillingStatus, key: string): boolean {
+    return !!s.free_plan && !!s.plans?.find(p => p.code === s.free_plan)?.features.includes(key);
+  }
+
+  // El plan guardado sigue vigente según el reloj del dispositivo (por si la app quedó abierta)
+  private planStillValid(s: BillingStatus): boolean {
+    return !!s.subscription && (!this.passed(s.subscription.ends_at) || !this.passed(s.subscription.paid_until));
+  }
+
+  private passed(serverDate: string): boolean {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(serverDate || '');
+    if (!m) return false;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0)).getTime() <= Date.now();
   }
 
   // Llamadas que cambian el plan o los créditos (solo administradores)

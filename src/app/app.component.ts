@@ -12,67 +12,55 @@ import { Memo } from './shared/memo';
 import { NetworkService } from './services/network';
 import { RemindersService } from './services/reminders';
 
-interface NavItem { label: string; icon: string; url: string; admin?: boolean; }
-interface NavGroup { title: string; items: NavItem[]; school?: boolean; }
+// feature: función del plan del negocio que necesita la pantalla; si no está vigente se muestra con candado
+interface NavItem { label: string; icon: string; url: string; admin?: boolean; feature?: string; locked?: boolean; }
+interface NavGroup { title: string; items: NavItem[]; }
 
-// El menú sigue el día del puesto: vender → lo que pasa en el día → dinero → inventario →
-// lo que se configura de vez en cuando. Lo que es solo para la escuela va al final, plegado.
 const NAV: NavGroup[] = [
   { title: '', items: [{ label: 'Inicio', icon: 'home', url: '/home' }] },
   {
-    title: 'Vender',
+    // Operación del empleado: vender, entregar pedidos y cortar caja
+    title: 'Ventas y caja',
     items: [
-      { label: 'Punto de venta', icon: 'pos', url: '/pos' },
-      { label: 'Pedidos', icon: 'orders', url: '/orders' },
-      { label: 'Corte de caja', icon: 'cash', url: '/cash-cut' },
+      { label: 'Punto de venta', icon: 'pos', url: '/pos', feature: 'ventas' },
+      { label: 'Pedidos', icon: 'orders', url: '/orders', feature: 'ventas' },
+      { label: 'Corte de caja', icon: 'cash', url: '/cash-cut', feature: 'ventas' },
     ],
   },
   {
-    title: 'Día a día',
+    title: 'Operación',
     items: [
-      { label: 'Encargos y notas', icon: 'bag', url: '/notes' },
-      { label: 'Gastos', icon: 'expenses', url: '/expenses' },
-      { label: 'Mermas y pérdidas', icon: 'waste', url: '/waste' },
-      { label: 'Asistencia', icon: 'pin', url: '/attendance' },
+      { label: 'Notas y pendientes', icon: 'notes', url: '/notes' },
+      { label: 'Asistencia', icon: 'pin', url: '/attendance', feature: 'asistencia' },
+      { label: 'Gastos', icon: 'expenses', url: '/expenses', feature: 'gastos' },
+      { label: 'Mermas', icon: 'waste', url: '/waste', feature: 'inventario' },
+      { label: 'Inventario', icon: 'inventory', url: '/inventory', feature: 'inventario' },
+      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true, feature: 'inventario' },
     ],
   },
   {
-    title: 'Dinero',
-    items: [{ label: 'Cuentas y apartados', icon: 'wallet', url: '/money', admin: true }],
-  },
-  {
-    title: 'Inventario',
+    title: 'Menú y recetas',
     items: [
-      { label: 'Inventario', icon: 'inventory', url: '/inventory' },
-      { label: 'Compras', icon: 'purchases', url: '/purchases', admin: true },
+      { label: 'Productos', icon: 'products', url: '/products', admin: true, feature: 'ventas' },
+      { label: 'Preparaciones', icon: 'preparations', url: '/preparations', admin: true, feature: 'recetas' },
+      { label: 'Insumos', icon: 'inputs', url: '/inputs', admin: true, feature: 'inventario|recetas' },
+      { label: 'Categorías', icon: 'categories', url: '/categories', admin: true, feature: 'ventas' },
     ],
   },
   {
-    title: 'Mi menú y costos',
+    title: 'Análisis',
     items: [
-      { label: 'Productos', icon: 'products', url: '/products', admin: true },
-      { label: 'Preparaciones', icon: 'preparations', url: '/preparations', admin: true },
-      { label: 'Insumos', icon: 'inputs', url: '/inputs', admin: true },
-      { label: 'Categorías', icon: 'categories', url: '/categories', admin: true },
-      { label: 'Costos', icon: 'costs', url: '/costs', admin: true },
-      { label: 'Reportes', icon: 'reports', url: '/reports', admin: true },
+      { label: 'Costos', icon: 'costs', url: '/costs', admin: true, feature: 'recetas' },
+      { label: 'Reportes', icon: 'reports', url: '/reports', admin: true, feature: 'reportes' },
     ],
   },
   {
-    title: 'Configuración',
-    items: [
-      { label: 'Cómo reparto mi venta', icon: 'pie', url: '/money-settings', admin: true },
-      { label: 'Métodos de pago', icon: 'card', url: '/payment-methods', admin: true },
-      { label: 'Usuarios', icon: 'users', url: '/users', admin: true },
-    ],
-  },
-  {
-    title: 'Escuela',
-    school: true,
+    title: 'Administración',
     items: [
       { label: 'Plan y créditos', icon: 'star', url: '/billing' },
+      { label: 'Usuarios', icon: 'users', url: '/users', admin: true },
+      { label: 'Métodos de pago', icon: 'card', url: '/payment-methods', admin: true, feature: 'ventas' },
       { label: 'Validar estudiante', icon: 'student', url: '/student-validation' },
-      { label: 'Asistencia (técnico)', icon: 'target', url: '/attendance?tech=1' },
       { label: 'Servidor', icon: 'server', url: '/data-origins' },
     ],
   },
@@ -161,15 +149,14 @@ export class AppComponent implements OnDestroy {
   }
 
   get groups(): NavGroup[] {
-    return this.memo.get('groups', [this.isAdmin], () =>
-      NAV.map(g => ({ ...g, items: g.items.filter(i => !i.admin || this.isAdmin) })).filter(g => g.items.length)
+    return this.memo.get('groups', [this.isAdmin, this.billingVersion], () =>
+      NAV.map(g => ({
+        ...g,
+        items: g.items
+          .filter(i => !i.admin || this.isAdmin)
+          .map(i => ({ ...i, locked: !!i.feature && !i.feature.split('|').some(k => this.billing.isActive(k)) })),
+      })).filter(g => g.items.length)
     );
-  }
-
-  // La sección "Escuela" va plegada; se abre sola si estás en una de sus pantallas
-  schoolOpen = false;
-  get schoolVisible(): boolean {
-    return this.schoolOpen || NAV.some(g => g.school && g.items.some(i => this.isActive(i.url)));
   }
 
   // Resumen del plan del negocio para el pie del menú
@@ -192,16 +179,16 @@ export class AppComponent implements OnDestroy {
   }
 
   isActive(url: string): boolean {
-    const [path, query] = url.split('?');
-    const here = this.url === path || this.url.startsWith(path + '/');
-    if (!here) return false;
-    // "Asistencia" y "Asistencia (técnico)" son la misma pantalla con distinta vista
-    const tech = typeof location !== 'undefined' && /[?&]tech=1/.test(location.hash || location.search);
-    return query ? tech : !tech || path !== '/attendance';
+    return this.url === url || this.url.startsWith(url + '/');
   }
 
-  async go(url: string) {
-    await this.router.navigateByUrl(url);
+  async go(url: string, item?: NavItem) {
+    // Una pantalla con candado lleva a Plan y créditos con esa función marcada
+    if (item?.locked && item.feature) {
+      await this.router.navigate(['/billing'], { queryParams: { feature: item.feature.split('|')[0] } });
+    } else {
+      await this.router.navigateByUrl(url);
+    }
     await this.menu.close();
   }
 

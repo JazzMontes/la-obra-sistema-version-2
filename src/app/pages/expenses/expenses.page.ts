@@ -22,9 +22,6 @@ export class ExpensesPage {
   readonly suggestions = ['Gas', 'Artículos de limpieza', 'Hielo', 'Transporte', 'Mantenimiento', 'Propinas'];
 
   expenses: any[] = [];
-  // Cuentas de dinero (Efectivo, Banco y apartados) para decir de dónde salió cada gasto
-  accounts: any[] = [];
-  cashId: number | null = null;
   loading = true;
   from = todayIso(-6);
   to = todayIso();
@@ -55,15 +52,6 @@ export class ExpensesPage {
     try {
       const params = this.isAdmin ? { date_from: this.from, date_to: this.to } : {};
       this.expenses = (await this.api.get('expenses/index.php', params)).expenses;
-      if (!this.accounts.length) {
-        try {
-          const a = await this.api.get('money/accounts');
-          this.accounts = a.accounts;
-          this.cashId = a.cash_account_id;
-        } catch {
-          this.accounts = [];
-        }
-      }
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudieron cargar los gastos'));
     } finally {
@@ -75,22 +63,13 @@ export class ExpensesPage {
     return this.memo.get('visible', [this.expenses, this.showCancelled], () => this.expenses.filter(e => this.showCancelled || e.status === 'active'));
   }
 
-  accountName(id: any): string {
-    const a = this.accounts.find(x => x.id === Number(id ?? this.cashId));
-    return a ? a.name : 'Efectivo';
-  }
-
-  isFromCash(e: any): boolean {
-    return !e.account_id || Number(e.account_id) === this.cashId;
-  }
-
   get total(): number {
     return this.expenses.filter(e => e.status === 'active').reduce((s, e) => s + Number(e.amount), 0);
   }
 
   openNew() {
     this.editing = null;
-    this.form = { amount: null, reason: '', change_reason: '', account_id: null };
+    this.form = { amount: null, reason: '', change_reason: '' };
     this.formError = '';
     this.history = null;
     this.open = true;
@@ -99,7 +78,7 @@ export class ExpensesPage {
   async openEdit(e: any) {
     if (e.status !== 'active') return;
     this.editing = e;
-    this.form = { amount: Number(e.amount), reason: e.reason, change_reason: '', account_id: e.account_id ?? null };
+    this.form = { amount: Number(e.amount), reason: e.reason, change_reason: '' };
     this.formError = '';
     this.history = null;
     this.open = true;
@@ -119,8 +98,7 @@ export class ExpensesPage {
     if (!String(this.form.reason || '').trim()) return void (this.formError = 'Escribe el concepto');
     this.saving = true;
     try {
-      const body: any = { amount: Math.round(Number(this.form.amount) * 100) / 100, reason: String(this.form.reason).trim() };
-      if (this.accounts.length) body.account_id = this.form.account_id || null;
+      const body = { amount: Math.round(Number(this.form.amount) * 100) / 100, reason: String(this.form.reason).trim() };
       if (this.editing) {
         await this.api.patch('expenses/update.php', { id: this.editing.id, ...body, change_reason: this.form.change_reason || null });
       } else {
