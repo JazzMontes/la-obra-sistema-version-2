@@ -10,7 +10,7 @@ import { Memo } from '../../shared/memo';
 import { parseServerDate } from '../../shared/format.pipes';
 import { SearchOption } from '../../shared/search-select.component';
 
-type Preset = '' | '1h' | 'today18' | 'tomorrow8' | 'custom';
+type Preset = '' | 'now' | '1h' | 'today18' | 'tomorrow8' | 'custom';
 
 // Renglón de la lista de compra. price = aproximado de ese renglón; se calcula con el costo del insumo
 // (cantidad × lo que trae la unidad × costo por unidad principal) hasta que lo cambies a mano.
@@ -69,7 +69,6 @@ export class NotesPage implements OnDestroy {
   busy = new Set<number>();
 
   draft: NoteForm = this.blank();
-  private originalAssignee: number | null = null;
 
   // Insumos con su costo (para la lista de compra). Se cargan al abrir una nota.
   catalog: any[] = [];
@@ -108,7 +107,7 @@ export class NotesPage implements OnDestroy {
   }
 
   private blank(): NoteForm {
-    return { id: null, title: '', details: '', assigned_to: null, preset: '', remind_at: '', repeat: 'none', items: [] };
+    return { id: null, title: '', details: '', assigned_to: null, preset: 'now', remind_at: '', repeat: 'none', items: [] };
   }
 
   async load(silent = false) {
@@ -181,6 +180,7 @@ export class NotesPage implements OnDestroy {
       f.repeat = 'none';
       return;
     }
+    if (p === 'now') { f.remind_at = ''; return; }
     if (p === '1h') d.setMinutes(d.getMinutes() + 60);
     else if (p === 'today18') d.setHours(18, 0);
     else if (p === 'tomorrow8') { d.setDate(d.getDate() + 1); d.setHours(8, 0); }
@@ -197,19 +197,19 @@ export class NotesPage implements OnDestroy {
     return this.isAdmin || !n.created_by || n.created_by === this.me;
   }
 
-  // La nota solo lleva a quién le toca y la lista. Al guardarla con una persona (o al cambiarla),
-  // el recordatorio le llega a esa persona en ese momento.
+  // La nota lleva a quién le toca, cuándo recordárselo y la lista.
+  // "Al guardar" = el recordatorio le llega en ese momento.
   private payload(f: NoteForm) {
-    const changedPerson = !f.id || f.assigned_to !== this.originalAssignee;
     const now = new Date();
     now.setSeconds(0, 0);
+    const at = f.preset === 'now' ? toInput(now) : f.preset && f.remind_at ? f.remind_at : '';
     return {
       id: f.id || null,
       title: '',
       details: null,
       assigned_to: f.assigned_to,
-      remind_at: f.assigned_to ? (changedPerson ? toInput(now).replace('T', ' ') : f.remind_at ? f.remind_at.replace('T', ' ') : null) : null,
-      repeat: 'none',
+      remind_at: at ? at.replace('T', ' ') : null,
+      repeat: f.preset && f.preset !== 'now' ? f.repeat : 'none',
       items: (f.items ?? [])
         .filter(i => String(i.name || '').trim())
         .map(i => ({ input_id: i.input_id, name: i.name.trim(), qty: i.qty, unit: i.unit, price: i.price === null || (i.price as any) === '' ? null : Number(i.price) })),
@@ -218,6 +218,7 @@ export class NotesPage implements OnDestroy {
 
   private validate(f: NoteForm): string {
     if (!(f.items ?? []).some(i => String(i.name || '').trim())) return 'Agrega al menos una cosa a la lista';
+    if (f.preset === 'custom' && !f.remind_at) return 'Elige la fecha y hora del recordatorio';
     return '';
   }
 
@@ -242,7 +243,6 @@ export class NotesPage implements OnDestroy {
 
   openNew() {
     this.form = this.blank();
-    this.originalAssignee = null;
     this.formError = '';
     this.open = true;
     void this.loadCatalog();
@@ -263,7 +263,6 @@ export class NotesPage implements OnDestroy {
         input_id: i.input_id ?? null, name: i.name, qty: i.qty ?? null, unit: i.unit ?? '', price: i.price ?? null, manual: true,
       })),
     };
-    this.originalAssignee = n.assigned_to ?? null;
     this.formError = '';
     this.open = true;
     void this.loadCatalog();
