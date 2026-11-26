@@ -6,7 +6,23 @@ import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { autoRefresh } from '../../services/render';
 
-interface Item { name: string; qty: string; estimate: number | null; real?: number | null; }
+interface Item { name: string; qty: number | string | null; unit: string; estimate: number | null; real?: number | null; }
+
+// Unidades de compra más comunes (también se puede escribir otra)
+export const BUY_UNITS = ['pza', 'kg', 'g', 'L', 'ml', 'paquete', 'caja', 'bolsa', 'docena', 'manojo', 'lata', 'frasco', 'botella', 'rollo', 'charola', 'costal'];
+
+// "40 pza", "1.5 kg", "2 paquetes"
+export function qtyLabel(i: any): string {
+  const q = i?.qty;
+  const u = String(i?.unit || '').trim();
+  if (q === null || q === undefined || q === '') return u;
+  const n = Number(q);
+  const qs = Number.isFinite(n) ? String(+n.toFixed(3)) : String(q);
+  if (!u) return qs;
+  const plural = Number.isFinite(n) && n !== 1 && ['paquete', 'caja', 'bolsa', 'docena', 'lata', 'botella', 'charola'].includes(u) ? 's' : '';
+  const pluralEs = Number.isFinite(n) && n !== 1 && ['manojo', 'frasco', 'rollo', 'costal'].includes(u) ? 's' : '';
+  return `${qs} ${u}${plural || pluralEs}`;
+}
 
 @Component({
   changeDetection: ChangeDetectionStrategy.Default,
@@ -66,7 +82,7 @@ export class ErrandsComponent implements OnInit {
   }
 
   private emptyItem(): Item {
-    return { name: '', qty: '', estimate: null };
+    return { name: '', qty: null, unit: '', estimate: null };
   }
 
   // ---------- Formulario ----------
@@ -83,7 +99,7 @@ export class ErrandsComponent implements OnInit {
       id: e.id,
       person: e.person,
       place: e.place || '',
-      items: (e.items || []).map((i: any) => ({ name: i.name, qty: i.qty || '', estimate: i.estimate ?? null })),
+      items: (e.items || []).map((i: any) => ({ name: i.name, qty: i.qty ?? null, unit: i.unit || '', estimate: i.estimate ?? null })),
       given: e.given || null,
       account_id: e.account_id,
       note: e.note || '',
@@ -102,9 +118,35 @@ export class ErrandsComponent implements OnInit {
     if (!this.form.items.length) this.addItem();
   }
 
+  readonly units = BUY_UNITS;
+  readonly qtyLabel = qtyLabel;
+
+  // Última unidad con la que se compró cada artículo (ej. "Pan" → pza, "Carne" → kg)
+  private get lastUnits(): Map<string, string> {
+    const m = new Map<string, string>();
+    for (const e of [...this.errands].reverse()) {
+      for (const i of e.items || []) if (i.unit) m.set(String(i.name).trim().toLowerCase(), i.unit);
+    }
+    return m;
+  }
+
   // Al escribir en el último renglón aparece otro vacío
   touchItem(i: number) {
     if (i === this.form.items.length - 1 && String(this.form.items[i].name || '').trim()) this.addItem();
+  }
+
+  // Al terminar de escribir el nombre, sugiere la unidad con la que se compró antes
+  suggestUnit(it: Item) {
+    if (it.unit) return;
+    const u = this.lastUnits.get(String(it.name || '').trim().toLowerCase());
+    if (u) it.unit = u;
+  }
+
+  // "≈ $10 c/u" cuando hay cantidad y costo
+  perUnit(it: Item): number | null {
+    const q = Number(it.qty);
+    const c = Number(it.estimate);
+    return q > 0 && c > 0 && q !== 1 ? Math.round((c / q) * 100) / 100 : null;
   }
 
   get estimate(): number {
@@ -129,7 +171,12 @@ export class ErrandsComponent implements OnInit {
         id: f.id,
         person: f.person.trim(),
         place: String(f.place || '').trim(),
-        items: items.map(i => ({ name: i.name.trim(), qty: String(i.qty || '').trim(), estimate: i.estimate === null || (i.estimate as any) === '' ? null : Number(i.estimate) })),
+        items: items.map(i => ({
+          name: i.name.trim(),
+          qty: i.qty === null || i.qty === '' ? null : Number.isFinite(Number(i.qty)) ? Number(i.qty) : String(i.qty).trim(),
+          unit: String(i.unit || '').trim(),
+          estimate: i.estimate === null || (i.estimate as any) === '' ? null : Number(i.estimate),
+        })),
         given: Number(f.given) > 0 ? Math.round(Number(f.given) * 100) / 100 : 0,
         account_id: f.account_id,
         note: String(f.note || '').trim(),
