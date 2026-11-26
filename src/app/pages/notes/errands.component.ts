@@ -94,11 +94,11 @@ export class ErrandsComponent implements OnInit {
   }
 
   addItem() {
-    this.form.items.push(this.emptyItem());
+    this.form.items = [...this.form.items, this.emptyItem()];
   }
 
   removeItem(i: number) {
-    this.form.items.splice(i, 1);
+    this.form.items = this.form.items.filter((_: Item, k: number) => k !== i);
     if (!this.form.items.length) this.addItem();
   }
 
