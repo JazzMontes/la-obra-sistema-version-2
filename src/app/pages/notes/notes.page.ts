@@ -1,7 +1,6 @@
 // Notas del equipo: qué va a comprar cada quien, pendientes ("pedir el pan") y recordatorios.
 // Los avisos los da services/reminders.ts (en la app y como notificación del dispositivo).
-import { ChangeDetectionStrategy, Component, OnDestroy, ViewChild } from '@angular/core';
-import { ErrandsComponent } from './errands.component';
+import { ChangeDetectionStrategy, Component, OnDestroy } from '@angular/core';
 import { ApiService, errorMessage } from '../../services/api';
 import { UiService } from '../../services/ui';
 import { Auth } from '../../services/auth';
@@ -9,10 +8,23 @@ import { REMINDERS_EVENT, RemindersService } from '../../services/reminders';
 import { autoRefresh } from '../../services/render';
 import { Memo } from '../../shared/memo';
 import { parseServerDate } from '../../shared/format.pipes';
+import { SearchOption } from '../../shared/search-select.component';
 
 type Preset = '' | '1h' | 'today18' | 'tomorrow8' | 'custom';
 
+// Renglón de la lista de compra. price = aproximado de ese renglón; se calcula con el costo del insumo
+// (cantidad × lo que trae la unidad × costo por unidad principal) hasta que lo cambies a mano.
+interface ShopItem {
+  input_id: number | null;
+  name: string;
+  qty: number | null;
+  unit: string;
+  price: number | null;
+  manual: boolean;
+}
+
 interface NoteForm {
+  items?: ShopItem[];
   id?: number | null;
   title: string;
   details: string;
@@ -47,9 +59,6 @@ export class NotesPage implements OnDestroy {
   private readonly memo = new Memo();
   private readonly refresher = autoRefresh();
 
-  // Encargos de compra (dinero entregado y su cambio) o notas y pendientes
-  view: 'errands' | 'notes' = 'errands';
-  @ViewChild(ErrandsComponent) errandsPanel?: ErrandsComponent;
   status: 'pending' | 'done' = 'pending';
   notes: any[] = [];
   people: { id: number; name: string }[] = [];
@@ -60,6 +69,11 @@ export class NotesPage implements OnDestroy {
   busy = new Set<number>();
 
   draft: NoteForm = this.blank();
+  private originalAssignee: number | null = null;
+
+  // Insumos con su costo (para la lista de compra). Se cargan al abrir una nota.
+  catalog: any[] = [];
+  pickerKey = 0;
   open = false;
   form: NoteForm = this.blank();
   saving = false;
@@ -84,10 +98,7 @@ export class NotesPage implements OnDestroy {
   }
 
   ionViewWillEnter() {
-    if (/[?&]tab=errands/.test(location.hash || '')) this.view = 'errands';
-    else if (/[?&]tab=notes/.test(location.hash || '')) this.view = 'notes';
     this.visible = true;
-    void this.errandsPanel?.load();
     void this.reminders.readPermission();
     void this.load();
   }
@@ -97,7 +108,7 @@ export class NotesPage implements OnDestroy {
   }
 
   private blank(): NoteForm {
-    return { id: null, title: '', details: '', assigned_to: null, preset: '', remind_at: '', repeat: 'none' };
+    return { id: null, title: '', details: '', assigned_to: null, preset: '', remind_at: '', repeat: 'none', items: [] };
   }
 
   async load(silent = false) {
@@ -186,20 +197,27 @@ export class NotesPage implements OnDestroy {
     return this.isAdmin || !n.created_by || n.created_by === this.me;
   }
 
+  // La nota solo lleva a quién le toca y la lista. Al guardarla con una persona (o al cambiarla),
+  // el recordatorio le llega a esa persona en ese momento.
   private payload(f: NoteForm) {
+    const changedPerson = !f.id || f.assigned_to !== this.originalAssignee;
+    const now = new Date();
+    now.setSeconds(0, 0);
     return {
       id: f.id || null,
-      title: f.title.trim(),
-      details: f.details?.trim() || null,
+      title: '',
+      details: null,
       assigned_to: f.assigned_to,
-      remind_at: f.preset && f.remind_at ? f.remind_at.replace('T', ' ') : null,
-      repeat: f.preset ? f.repeat : 'none',
+      remind_at: f.assigned_to ? (changedPerson ? toInput(now).replace('T', ' ') : f.remind_at ? f.remind_at.replace('T', ' ') : null) : null,
+      repeat: 'none',
+      items: (f.items ?? [])
+        .filter(i => String(i.name || '').trim())
+        .map(i => ({ input_id: i.input_id, name: i.name.trim(), qty: i.qty, unit: i.unit, price: i.price === null || (i.price as any) === '' ? null : Number(i.price) })),
     };
   }
 
   private validate(f: NoteForm): string {
-    if (!f.title.trim()) return 'Escribe qué hay que comprar o hacer';
-    if (f.preset === 'custom' && !f.remind_at) return 'Elige la fecha y hora del recordatorio';
+    if (!(f.items ?? []).some(i => String(i.name || '').trim())) return 'Agrega al menos una cosa a la lista';
     return '';
   }
 
@@ -224,8 +242,10 @@ export class NotesPage implements OnDestroy {
 
   openNew() {
     this.form = this.blank();
+    this.originalAssignee = null;
     this.formError = '';
     this.open = true;
+    void this.loadCatalog();
   }
 
   openEdit(n: any) {
@@ -239,9 +259,124 @@ export class NotesPage implements OnDestroy {
       remind_at: at ? toInput(at) : '',
       repeat: n.repeat ?? 'none',
       created_by: n.created_by,
+      items: (n.items ?? []).map((i: any) => ({
+        input_id: i.input_id ?? null, name: i.name, qty: i.qty ?? null, unit: i.unit ?? '', price: i.price ?? null, manual: true,
+      })),
     };
+    this.originalAssignee = n.assigned_to ?? null;
     this.formError = '';
     this.open = true;
+    void this.loadCatalog();
+  }
+
+  // ---------- Lista de compra (solo nota: no registra compras ni dinero) ----------
+  async loadCatalog() {
+    if (this.catalog.length) return;
+    try {
+      this.catalog = (await this.api.get('notes/inputs')).inputs ?? [];
+    } catch {
+      this.catalog = [];
+    }
+  }
+
+  get catalogOptions(): SearchOption[] {
+    return this.memo.get('catalog', [this.catalog], () =>
+      this.catalog.map(i => ({ id: Number(i.id), name: i.name, sub: i.unit_cost !== null ? `$${Number(i.unit_cost).toFixed(2)} / ${i.unit}` : 'sin costo' })));
+  }
+
+  private inputOf(it: ShopItem): any {
+    return it.input_id ? this.catalog.find(c => Number(c.id) === Number(it.input_id)) : null;
+  }
+
+  // Unidades del insumo: las de compra primero, luego la principal y las de receta
+  unitsFor(it: ShopItem): { name: string; factor: number }[] {
+    const inp = this.inputOf(it);
+    return this.memo.get('u:' + it.input_id + ':' + it.unit, [inp], () => {
+      if (!inp) return [];
+      const all = (inp.units ?? []).map((u: any) => ({ name: String(u.name), factor: Number(u.factor) || Number(u.base_amount) / (Number(u.unit_amount) || 1), buy: u.use_in !== 'recipe' }));
+      const list = [...all.filter((u: any) => u.buy), { name: String(inp.unit), factor: 1 }, ...all.filter((u: any) => !u.buy)];
+      if (it.unit && !list.some(u => u.name === it.unit)) list.push({ name: it.unit, factor: 1 });
+      return list;
+    });
+  }
+
+  // Al agregar un insumo se llena con su última compra: unidad, cantidad y lo que costó.
+  // Si nunca se ha comprado, con su primera unidad de compra y el costo que tiene en Insumos.
+  addInput(id: any) {
+    const inp = this.catalog.find(c => Number(c.id) === Number(id));
+    if (!inp || !this.form.items) return;
+    const lp = inp.last_purchase;
+    const probe: ShopItem = { input_id: Number(inp.id), name: inp.name, qty: 1, unit: '', price: null, manual: false };
+    const units = this.unitsFor(probe);
+    const fromLast = lp ? units.find(u => u.name.toLowerCase() === String(lp.buy_unit || inp.unit).toLowerCase()) : undefined;
+    const it: ShopItem = fromLast
+      ? { ...probe, unit: fromLast.name, qty: Number(lp.quantity) || 1 }
+      : { ...probe, unit: units[0]?.name ?? inp.unit };
+    this.recalc(it);
+    this.form.items = [...this.form.items, it];
+    this.pickerKey++;
+  }
+
+  // "Última compra: 5 paquete a $100 c/u (25 nov)"
+  lastInfo(it: ShopItem): any {
+    return this.inputOf(it)?.last_purchase ?? null;
+  }
+
+  // Algo que no está en Insumos (servilletas, una herramienta…): el precio se escribe a mano
+  addFree(name: string) {
+    if (!this.form.items) return;
+    this.form.items = [...this.form.items, { input_id: null, name: String(name || '').trim(), qty: 1, unit: 'pza', price: null, manual: true }];
+    this.pickerKey++;
+  }
+
+  removeItem(i: number) {
+    this.form.items = (this.form.items ?? []).filter((_, k) => k !== i);
+  }
+
+  // Precio aproximado: si es la misma unidad de la última compra, con el precio de esa compra;
+  // si no, con el costo del insumo (cantidad × lo que trae la unidad × costo por unidad principal).
+  recalc(it: ShopItem) {
+    if (it.manual) return;
+    const inp = this.inputOf(it);
+    const u = this.unitsFor(it).find(x => x.name === it.unit);
+    if (!inp || !u || !(Number(it.qty) > 0)) {
+      it.price = null;
+      return;
+    }
+    const lp = inp.last_purchase;
+    const sameAsLast = lp && String(lp.buy_unit || inp.unit).toLowerCase() === it.unit.toLowerCase()
+      && Math.abs(Number(lp.content_per_package || 1) - u.factor) < 0.0005;
+    if (sameAsLast && lp.unit_cost !== null && lp.unit_cost !== undefined) {
+      it.price = Math.round(Number(it.qty) * Number(lp.unit_cost) * 100) / 100;
+    } else if (inp.unit_cost !== null && inp.unit_cost !== undefined) {
+      it.price = Math.round(Number(it.qty) * u.factor * Number(inp.unit_cost) * 100) / 100;
+    } else {
+      it.price = null;
+    }
+  }
+
+  priceTyped(it: ShopItem) {
+    it.manual = true;
+  }
+
+  usePrice(it: ShopItem) {
+    it.manual = false;
+    this.recalc(it);
+  }
+
+  hasCost(it: ShopItem): boolean {
+    const inp = this.inputOf(it);
+    return !!inp && ((inp.unit_cost !== null && inp.unit_cost !== undefined) || !!inp.last_purchase);
+  }
+
+  get formTotal(): number {
+    return Math.round((this.form.items ?? []).reduce((s, i) => s + (Number(i.price) || 0), 0) * 100) / 100;
+  }
+
+  // "2 paquete · 1.5 kg"
+  itemLabel(i: any): string {
+    const q = i.qty === null || i.qty === undefined ? '' : String(+Number(i.qty).toFixed(3));
+    return [q, i.unit].filter(Boolean).join(' ');
   }
 
   async save() {

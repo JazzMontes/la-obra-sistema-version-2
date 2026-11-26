@@ -18,6 +18,8 @@ const routes: Routes = [
   { path: 'change-password', loadChildren: () => import('./pages/change-password/change-password.module').then(m => m.ChangePasswordPageModule) },
 
   page('home', () => import('./home/home.module').then(m => m.HomePageModule)),
+  // Notas: pendientes, lista de compras con precio aproximado y recordatorios (para todos)
+  page('notes', () => import('./pages/notes/notes.module').then(m => m.NotesPageModule)),
   page('pos', () => import('./pages/pos/pos.module').then(m => m.PosPageModule), false, 'ventas'),
   page('orders', () => import('./pages/orders/orders.module').then(m => m.OrdersPageModule), false, 'ventas'),
   page('cash-cut', () => import('./pages/cash-cut/cash-cut.module').then(m => m.CashCutPageModule), false, 'ventas'),
@@ -26,8 +28,6 @@ const routes: Routes = [
   page('expenses', () => import('./pages/expenses/expenses.module').then(m => m.ExpensesPageModule), false, 'gastos'),
   page('attendance', () => import('./pages/attendance/attendance.module').then(m => m.AttendancePageModule), false, 'asistencia'),
   page('profile', () => import('./pages/profile/profile.module').then(m => m.ProfilePageModule)),
-  // Notas y recordatorios: para todos y en cualquier plan
-  page('notes', () => import('./pages/notes/notes.module').then(m => m.NotesPageModule)),
   page('billing', () => import('./pages/billing/billing.module').then(m => m.BillingPageModule)),
   page('student-validation', () => import('./pages/student-validation/student-validation.module').then(m => m.StudentValidationPageModule)),
 

@@ -25,7 +25,6 @@ export class MoneyPage {
   accounts: any[] = [];
   debts: any[] = [];
   today: any = null;
-  openErrands = 0;
 
   // Detalle de una cuenta
   detail: any = null;
@@ -72,7 +71,6 @@ export class MoneyPage {
       this.accounts = r.accounts;
       this.debts = r.debts;
       this.today = r.today;
-      this.openErrands = r.open_errands;
     } catch (e) {
       this.ui.error(errorMessage(e, 'No se pudo cargar el dinero'));
     } finally {

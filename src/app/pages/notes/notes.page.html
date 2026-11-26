@@ -1,9 +1,9 @@
 <ion-header class="app-header">
   <ion-toolbar>
     <ion-buttons slot="start"><ion-menu-button></ion-menu-button></ion-buttons>
-    <ion-title>{{ view === 'errands' ? 'Encargos' : 'Notas' }}</ion-title>
-    <ion-buttons slot="end" *ngIf="view === 'notes'">
-      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nueva</button>
+    <ion-title>Notas</ion-title>
+    <ion-buttons slot="end">
+      <button class="btn btn-primary btn-sm" type="button" (click)="openNew()"><app-icon name="plus"></app-icon>Nueva lista</button>
     </ion-buttons>
     <ion-buttons slot="end"><app-network-button></app-network-button></ion-buttons>
   </ion-toolbar>
@@ -11,18 +11,10 @@
 
 <ion-content>
   <div class="page page-narrow">
-    <div class="segmented block view-tabs">
-      <button type="button" [class.active]="view === 'errands'" (click)="view = 'errands'"><app-icon name="bag"></app-icon>Encargos de compra</button>
-      <button type="button" [class.active]="view === 'notes'" (click)="view = 'notes'"><app-icon name="notes"></app-icon>Notas y pendientes</button>
-    </div>
-
-    <app-errands *ngIf="view === 'errands'"></app-errands>
-
-    <ng-container *ngIf="view === 'notes'">
     <div class="page-intro">
       <div>
-        <h1>Notas y pendientes</h1>
-        <p>Qué hay que comprar o hacer y quién se encarga. A la hora del recordatorio le llega un aviso a esa persona (o a todo el equipo).</p>
+        <h1>Notas</h1>
+        <p>Listas de compra: a quién le toca y qué va a traer, con un aproximado de lo que se va a gastar. Es solo una nota: no registra compras ni dinero.</p>
       </div>
       <div class="segmented">
         <button type="button" [class.active]="status === 'pending'" (click)="setStatus('pending')">Pendientes {{ counts.pending || '' }}</button>
@@ -39,15 +31,6 @@
         <ng-container *ngIf="reminders.permission === 'unsupported'">Este navegador no permite notificaciones: los recordatorios se avisan dentro de la app mientras esté abierta.</ng-container>
       </div>
       <button class="btn btn-sm" type="button" *ngIf="reminders.permission === 'default'" (click)="reminders.enableNotifications()">Activar</button>
-    </div>
-
-    <!-- Agregar rápido -->
-    <div class="card quick" *ngIf="status === 'pending'">
-      <div class="quick-row">
-        <input class="input grow" [(ngModel)]="draft.title" placeholder="¿Qué hay que comprar o hacer? Ej. pedir el pan" maxlength="200" (keyup.enter)="quickAdd()" aria-label="Nueva nota" />
-        <button class="btn btn-primary" type="button" (click)="quickAdd()" [disabled]="saving || !draft.title.trim()">Agregar</button>
-      </div>
-      <ng-container *ngTemplateOutlet="fieldsTpl; context: { $implicit: draft, prefix: 'q' }"></ng-container>
     </div>
 
     <ng-container *ngIf="loading">
@@ -72,6 +55,13 @@
             <div class="grow">
               <div class="note-title">{{ n.title }}</div>
               <div class="note-details" *ngIf="n.details">{{ n.details }}</div>
+              <ul class="shop" *ngIf="n.items?.length">
+                <li *ngFor="let i of n.items">
+                  <span class="grow">{{ i.name }}<span class="muted" *ngIf="i.qty || i.unit"> · {{ itemLabel(i) }}</span></span>
+                  <span class="num muted" *ngIf="i.price !== null">≈ {{ i.price | money }}</span>
+                </li>
+                <li class="shop-total"><span class="grow">Aproximado</span><strong class="num">{{ n.items_total | money }}</strong></li>
+              </ul>
               <div class="note-meta">
                 <span class="chip" *ngIf="n.remind_at" [class.late]="n.overdue"><app-icon name="clock"></app-icon>{{ n.overdue ? 'Ya es hora · ' : '' }}{{ when(n.remind_at) }}</span>
                 <span class="chip" *ngIf="n.repeat !== 'none'"><app-icon name="repeat"></app-icon>{{ n.repeat === 'daily' ? 'Cada día' : 'Cada semana' }}</span>
@@ -87,7 +77,8 @@
         <div class="empty">
           <app-icon name="notes"></app-icon>
           <h3>{{ onlyMine && notes.length ? 'No tienes pendientes' : 'Sin pendientes' }}</h3>
-          <p>Anota lo que hay que comprar o hacer, a quién le toca y a qué hora recordarlo.</p>
+          <p>Arma una lista de compra y elige a quién le toca.</p>
+          <button class="btn btn-primary btn-sm" type="button" (click)="openNew()">Nueva lista</button>
         </div>
       </div>
     </ng-container>
@@ -110,63 +101,65 @@
         <p>Aquí aparecerá lo que ya se compró o se hizo.</p>
       </div>
     </div>
-    </ng-container>
   </div>
 </ion-content>
 
-<!-- Campos que comparten "agregar rápido" y la ventana de edición -->
-<ng-template #fieldsTpl let-f let-prefix="prefix">
-  <div class="fields">
-    <div class="field">
-      <label [attr.for]="prefix + '-who'">¿Quién?</label>
-      <select class="select" [id]="prefix + '-who'" [(ngModel)]="f.assigned_to">
-        <option [ngValue]="null">Cualquiera del equipo</option>
-        <option *ngFor="let p of people" [ngValue]="p.id">{{ p.name }}{{ p.id === me ? ' (yo)' : '' }}</option>
-      </select>
-    </div>
-    <div class="field">
-      <label [attr.for]="prefix + '-when'">Recordar</label>
-      <select class="select" [id]="prefix + '-when'" [ngModel]="f.preset" (ngModelChange)="setPreset(f, $event)">
-        <option value="">Sin recordatorio</option>
-        <option value="1h">En 1 hora</option>
-        <option value="today18" *ngIf="showToday18">Hoy a las 6:00 p. m.</option>
-        <option value="tomorrow8">Mañana a las 8:00 a. m.</option>
-        <option value="custom">Elegir fecha y hora…</option>
-      </select>
-    </div>
-    <div class="field" *ngIf="f.preset === 'custom'">
-      <label [attr.for]="prefix + '-at'">Fecha y hora</label>
-      <input class="input" type="datetime-local" [id]="prefix + '-at'" [(ngModel)]="f.remind_at" />
-    </div>
-    <div class="field" *ngIf="f.preset">
-      <label [attr.for]="prefix + '-rep'">Repetir</label>
-      <select class="select" [id]="prefix + '-rep'" [(ngModel)]="f.repeat">
-        <option value="none">No se repite</option>
-        <option value="daily">Cada día</option>
-        <option value="weekly">Cada semana</option>
-      </select>
-    </div>
-  </div>
-</ng-template>
-
 <!-- Nueva / editar -->
-<ion-modal class="sheet sheet-small" [isOpen]="open" (didDismiss)="open = false">
+<ion-modal class="sheet" [isOpen]="open" (didDismiss)="open = false">
   <ng-template>
     <div class="modal-shell">
       <div class="modal-head">
-        <h2>{{ form.id ? 'Editar nota' : 'Nueva nota' }}</h2>
+        <h2>{{ form.id ? 'Editar lista' : 'Nueva lista de compra' }}</h2>
         <button class="btn btn-ghost btn-icon" type="button" (click)="open = false" aria-label="Cerrar"><app-icon name="close"></app-icon></button>
       </div>
       <div class="modal-body stack">
         <div class="field">
-          <label for="n-title">¿Qué hay que comprar o hacer?</label>
-          <input id="n-title" class="input" [(ngModel)]="form.title" maxlength="200" placeholder="Ej. pedir el pan para mañana" />
+          <label for="n-who">¿Quién va a comprar?</label>
+          <select id="n-who" class="select" [(ngModel)]="form.assigned_to">
+            <option [ngValue]="null">Cualquiera del equipo</option>
+            <option *ngFor="let p of people" [ngValue]="p.id">{{ p.name }}{{ p.id === me ? ' (yo)' : '' }}</option>
+          </select>
+          <span class="hint" *ngIf="form.assigned_to">Al guardar le llega un recordatorio.</span>
         </div>
         <div class="field">
-          <label for="n-details">Detalles <span class="muted">(opcional)</span></label>
-          <textarea id="n-details" class="textarea" rows="3" [(ngModel)]="form.details" maxlength="1000" placeholder="Cantidades, marca, proveedor…"></textarea>
+          <label>Lista de compra <span class="muted">(opcional)</span></label>
+          <span class="hint">Cada insumo se llena con su última compra (unidad, cantidad y precio); cambia lo que quieras. Es solo una nota: no registra compras ni dinero.</span>
+          <div class="shop-edit" *ngIf="form.items?.length">
+            <div class="shop-row" *ngFor="let it of form.items; let i = index">
+              <div class="shop-name">
+                <strong>{{ it.name }}</strong>
+                <span class="small muted" *ngIf="!it.input_id">no está en Insumos</span>
+                <span class="small muted" *ngIf="it.input_id && !hasCost(it)">sin costo registrado</span>
+                <span class="small muted" *ngIf="lastInfo(it) as lp">Última compra: {{ lp.quantity | qty }} {{ lp.buy_unit }} a {{ lp.unit_cost | money }} c/u ({{ lp.date | dateMx: 'short' }})</span>
+              </div>
+              <input class="input qty" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="it.qty" (ngModelChange)="recalc(it)" [attr.aria-label]="'Cantidad de ' + it.name" />
+              <select class="select unit" *ngIf="it.input_id" [(ngModel)]="it.unit" (ngModelChange)="recalc(it)" [attr.aria-label]="'Unidad de ' + it.name">
+                <option *ngFor="let u of unitsFor(it)" [ngValue]="u.name">{{ u.name }}</option>
+              </select>
+              <input class="input unit" *ngIf="!it.input_id" [(ngModel)]="it.unit" maxlength="30" placeholder="pza" [attr.aria-label]="'Unidad de ' + it.name" />
+              <div class="input-group price">
+                <span class="addon">≈ $</span>
+                <input class="input" type="number" inputmode="decimal" min="0" step="any" [(ngModel)]="it.price" (ngModelChange)="priceTyped(it)" [attr.aria-label]="'Precio aproximado de ' + it.name" />
+              </div>
+              <button type="button" class="btn btn-ghost btn-icon" (click)="removeItem(i)" aria-label="Quitar"><app-icon name="close"></app-icon></button>
+              <button type="button" class="link small recalc" *ngIf="it.manual && hasCost(it)" (click)="usePrice(it)">Volver al precio de la última compra</button>
+            </div>
+          </div>
+          <ng-container *ngFor="let k of [pickerKey]">
+            <app-search-select
+              [items]="catalogOptions"
+              [value]="null"
+              (valueChange)="addInput($event)"
+              placeholder="+ Agregar insumo a la lista"
+              createLabel="Agregar sin insumo"
+              (create)="addFree($event)"
+            ></app-search-select>
+          </ng-container>
+          <div class="shop-sum" *ngIf="form.items?.length">
+            <span>Total aproximado</span>
+            <strong class="num">{{ formTotal | money }}</strong>
+          </div>
         </div>
-        <ng-container *ngTemplateOutlet="fieldsTpl; context: { $implicit: form, prefix: 'n' }"></ng-container>
         <div class="form-error" *ngIf="formError">{{ formError }}</div>
       </div>
       <div class="modal-foot">

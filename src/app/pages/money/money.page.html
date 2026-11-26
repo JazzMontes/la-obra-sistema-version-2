@@ -37,10 +37,6 @@
       <button type="button" class="qa" (click)="openDebt()"><app-icon name="hand"></app-icon>Alguien nos debe</button>
     </div>
 
-    <div class="notice" *ngIf="openErrands">
-      <app-icon name="bag"></app-icon>
-      <span>Hay {{ openErrands }} encargo{{ openErrands === 1 ? '' : 's' }} sin cerrar. El dinero que se entregó ya se descontó. <a routerLink="/notes" [queryParams]="{ tab: 'errands' }">Ver encargos</a></span>
-    </div>
 
     <div class="segmented block tabs">
       <button type="button" [class.active]="tab === 'accounts'" (click)="tab = 'accounts'">Cuentas y apartados</button>

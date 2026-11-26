@@ -30,7 +30,7 @@ const NAV: NavGroup[] = [
   {
     title: 'Día a día',
     items: [
-      { label: 'Encargos y notas', icon: 'bag', url: '/notes' },
+      { label: 'Notas', icon: 'notes', url: '/notes' },
       { label: 'Gastos', icon: 'expenses', url: '/expenses' },
       { label: 'Mermas y pérdidas', icon: 'waste', url: '/waste' },
       { label: 'Asistencia', icon: 'pin', url: '/attendance' },
